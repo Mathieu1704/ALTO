@@ -1,29 +1,72 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import 'react-native-reanimated';
+import { useFonts } from "expo-font";
+import { Stack } from "expo-router";
+import * as SplashScreen from "expo-splash-screen";
+import { useEffect } from "react";
+import { Platform } from "react-native";
+import Colors from "@/constants/colors";
+import { useSettingsStore } from "@/store/settings-store";
 
-import { useColorScheme } from '@/hooks/useColorScheme';
+import ErrorBoundary from "./error-boundary";
+
+
+export const unstable_settings = {
+  initialRouteName: "(tabs)",
+};
+
+// Prevent the splash screen from auto-hiding before asset loading is complete.
+SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-  const [loaded] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
+  const [loaded, error] = useFonts({
+    // ✅ ne charge rien (ou ajoute des fonts valides ici si besoin)
   });
 
+  useEffect(() => {
+    if (error) {
+      console.error(error);
+      throw error;
+    }
+  }, [error]);
+
+  useEffect(() => {
+    if (loaded) {
+      SplashScreen.hideAsync();
+    }
+  }, [loaded]);
+
   if (!loaded) {
-    // Async font loading only occurs in development.
     return null;
   }
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="+not-found" />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    <ErrorBoundary>
+      <RootLayoutNav />
+    </ErrorBoundary>
+  );
+}
+
+function RootLayoutNav() {
+  const { isDarkTheme } = useSettingsStore();
+  const theme = isDarkTheme ? Colors.dark : Colors.light;
+
+  return (
+    <Stack
+      screenOptions={{
+        headerBackTitle: "Back",
+        headerStyle: {
+          backgroundColor: theme.background,
+        },
+        headerTintColor: theme.text,
+        headerTitleStyle: {
+          fontWeight: 'bold',
+        },
+        contentStyle: {
+          backgroundColor: theme.background,
+        },
+      }}
+    >
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="modal" options={{ presentation: "modal" }} />
+    </Stack>
   );
 }

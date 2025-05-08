@@ -1,39 +1,58 @@
 {
   "expo": {
-    "name": "ALTO",
-    "slug": "ALTO",
+    "name": "VoixActive Chat App",
+    "slug": "voixactive-chat-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "alto",
+    "scheme": "myapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "jsEngine": "jsc",
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "app.rork.voixactive-chat-app",
+      "infoPlist": {
+        "UIBackgroundModes": ["audio"],
+        "AVAudioSessionCategory": "Playback",
+        "AVAudioSessionMode": "Default",
+        "AVAudioSessionCategoryOptions": [
+          "duckOthers",
+          "allowBluetooth",
+          "allowBluetoothA2DP",
+          "defaultToSpeaker"
+        ]
+      }
     },
     "android": {
+      "package": "app.rork.voixactivechatapp",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "permissions": [
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
-      "bundler": "metro",
-      "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
-      "expo-router",
       [
-        "expo-splash-screen",
+        "expo-router",
         {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "origin": "https://rork.app/"
         }
-      ]
+      ],
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true
