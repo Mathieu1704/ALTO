@@ -1,12 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
-import * as Haptics from 'expo-haptics';
+import * as Location from 'expo-location';
+import * as Linking from 'expo-linking';
 import axios from 'axios';
 import { useChatStore } from '@/store/chat-store';
 import { useSettingsStore } from '@/store/settings-store';
-import { Message } from '@/types/chat';
 
 const API_URL = 'https://alto-api-zlw8.onrender.com/process-voice';
 
@@ -22,7 +21,6 @@ export default function useVoiceRecognition() {
   } = useChatStore();
   const { saveTranscripts } = useSettingsStore();
 
-  // Permissions micro
   useEffect(() => {
     (async () => {
       try {
@@ -36,7 +34,6 @@ export default function useVoiceRecognition() {
     })();
   }, []);
 
-  // Mode audio global
   useEffect(() => {
     (async () => {
       try {
@@ -130,60 +127,61 @@ export default function useVoiceRecognition() {
       recordingRef.current = null;
       if (!uri) return;
 
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setError('Permission localisation refusée');
+        setIsProcessing(false);
+        return;
+      }
+
+      const location = await Location.getCurrentPositionAsync({});
+      const { latitude, longitude } = location.coords;
+
       const formData = new FormData();
       formData.append('file', {
         uri,
-        name: 'audio.webm', // 🔁 le bon nom ici
-        type: 'audio/webm', // 🔁 bon type MIME
+        name: 'audio.webm',
+        type: 'audio/webm',
       } as any);
+      formData.append('lat', latitude.toString());
+      formData.append('lng', longitude.toString());
 
       const response = await axios.post(API_URL, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
-      const { transcript, response: assistantText, audio: base64Audio } = response.data;
+      const { transcript, response: assistantText, audio: base64Audio, maps_url } = response.data;
 
       const mp3Path = FileSystem.documentDirectory + 'response.mp3';
       await FileSystem.writeAsStringAsync(mp3Path, base64Audio, {
         encoding: FileSystem.EncodingType.Base64,
       });
 
-      const fileInfo = await FileSystem.getInfoAsync(mp3Path);
-      if (!fileInfo.exists || fileInfo.size === 0) {
-        setIsProcessing(false);
-        return;
-      }
-
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: false,
-        shouldDuckAndroid: true,
-        playThroughEarpieceAndroid: false,
-      });
-
-      await new Promise((resolve) => setTimeout(resolve, 300));
-
       const sound = new Audio.Sound();
       await sound.loadAsync({ uri: mp3Path });
-      await sound.setVolumeAsync(1.0);
       await sound.playAsync();
 
       if (saveTranscripts) {
         const now = Date.now();
+        addMessage({ id: now.toString(), role: 'user', content: transcript?.trim() || '[Message audio]', timestamp: now });
+        addMessage({ id: (now + 1).toString(), role: 'assistant', content: assistantText?.trim() || '[Réponse vide]', timestamp: now + 1 });
+      }
 
-        addMessage({
-          id: now.toString(),
-          role: 'user',
-          content: transcript?.trim() || '[Message audio]',
-          timestamp: now,
-        });
+      if (maps_url) {
+        console.log("maps_url reçu :", maps_url);
 
-        addMessage({
-          id: (now + 1).toString(),
-          role: 'assistant',
-          content: assistantText?.trim() || '[Réponse vide]',
-          timestamp: now + 1,
+        sound.setOnPlaybackStatusUpdate((status) => {
+          if (!status.isLoaded) return;
+        
+          if (status.didJustFinish && !status.isLooping) {
+            Linking.canOpenURL(maps_url).then((supported) => {
+              if (supported) {
+                Linking.openURL(maps_url);
+              } else {
+                console.error("Impossible d'ouvrir l'URL :", maps_url);
+              }
+            });
+          }
         });
       }
 
