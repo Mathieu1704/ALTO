@@ -3,7 +3,6 @@
     "main": "expo-router/entry",
     "version": "1.0.0",
     "scripts": {
-        "install": "npm install --legacy-peer-deps",
         "start": "expo start --tunnel",
         "start-web": "expo start --web --tunnel",
         "start-web-dev": "DEBUG=expo* expo start --web --tunnel"
