@@ -11,7 +11,7 @@ import { useChatStore } from '@/store/chat-store';
 import { useSettingsStore } from '@/store/settings-store';
 
 // Assure-toi que cette URL est correcte et accessible
-const API_URL = 'https://alto-api-zlw8.onrender.com/process-voice';
+const API_URL = 'https://alto-api-83dp.onrender.com/process-voice';
 // Pour la démo, si tu testes en local avec un backend local:
 // import { Platform } from 'react-native';
 // const API_URL = Platform.OS === 'android' ? 'http://10.0.2.2:8000/process-voice' : 'http://localhost:8000/process-voice';
