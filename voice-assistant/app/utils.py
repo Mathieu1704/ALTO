@@ -3,6 +3,7 @@ import time
 import tempfile
 import requests
 from datetime import datetime, timedelta
+import json # NEW: Ajouté pour parser les arguments de fonction plus proprement
 
 from openai import AsyncOpenAI
 from google.oauth2.credentials import Credentials
@@ -176,7 +177,6 @@ def get_directions_from_coords(lat: float, lng: float, destination: str, mode: s
     response = requests.get(url, params=params)
     data = response.json()
 
-    # Log status
     print("📥 Réponse Google Maps - status:", data.get("status"))
     if "error_message" in data:
         print("🛑 Erreur Google Maps:", data["error_message"])
@@ -186,20 +186,19 @@ def get_directions_from_coords(lat: float, lng: float, destination: str, mode: s
 
     try:
         leg = data["routes"][0]["legs"][0]
-        summary = (
-            f"Depuis votre position actuelle jusqu’à {leg['end_address']}, "
-            f"il faut environ {leg['duration']['text']} pour parcourir {leg['distance']['text']}."
-        )
+        # summary = ( # NEW: Le summary sera généré par GPT ou sera un simple "Ok c'est parti"
+        #     f"Depuis votre position actuelle jusqu’à {leg['end_address']}, "
+        #     f"il faut environ {leg['duration']['text']} pour parcourir {leg['distance']['text']}."
+        # )
         maps_url = (
             f"https://www.google.com/maps/dir/?api=1&origin={origin}"
-            f"&destination={destination}&travelmode={mode}"
+            f"&destination={destination.replace(' ', '+')}&travelmode={mode}" # NEW: Added replace for destination
         )
-        return (summary, maps_url)
+        # NEW: On retourne juste l'URL, le texte viendra de GPT ou d'un message fixe
+        return (f"Ok, c'est parti pour {destination} !", maps_url)
     except Exception as e:
         print("⚠️ Erreur lors de l'analyse des données Google Maps:", e)
         return ("Je n’ai pas pu interpréter l’itinéraire.", None)
-
-
 
 
 # 📚 Fonctions accessibles par GPT
@@ -274,14 +273,14 @@ calendar_get_function = {
 
 get_directions_function = {
     "name": "get_directions",
-    "description": "Fournit un itinéraire à pied, en voiture ou en transport.",
+    "description": "Fournit un itinéraire à pied, en voiture ou en transport en utilisant la position actuelle de l'utilisateur si disponible. Demande la destination.", # NEW: Clarified description
     "parameters": {
         "type": "object",
         "properties": {
-            "origin": {
-                "type": "string",
-                "description": "Adresse de départ (ex: Rue Albert 12, Mons)"
-            },
+            # "origin": { # NEW: Origin is now implicitly the user's current location via lat/lng
+            #     "type": "string",
+            #     "description": "Adresse de départ (ex: Rue Albert 12, Mons)"
+            # },
             "destination": {
                 "type": "string",
                 "description": "Adresse ou lieu d’arrivée (ex: Gare de Mons)"
@@ -293,115 +292,221 @@ get_directions_function = {
                 "default": "walking"
             }
         },
-        "required": ["origin", "destination"]
+        "required": ["destination"] # NEW: Origin is no longer required here as it uses lat/lng
+    }
+}
+
+# NEW: Fonction pour préparer l'envoi de message
+prepare_send_message_function = {
+    "name": "prepare_send_message",
+    "description": "Prépare l'envoi d'un message SMS à un contact. Le message sera finalisé et envoyé sur le téléphone de l'utilisateur.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "recipient_name": {
+                "type": "string",
+                "description": "Le nom du destinataire du message (ex: Maman, Jean Dupont)."
+            },
+            "message_content": {
+                "type": "string",
+                "description": "Le contenu du message à envoyer."
+            }
+        },
+        "required": ["recipient_name", "message_content"]
     }
 }
 
 
-
-
 # 🧠 Mémoire de conversation
+# NEW: Il est fortement recommandé d'améliorer ce system prompt pour inclure la nouvelle capacité.
+# Par exemple: "Tu es Alto, un assistant vocal intelligent, connecté et utile. Tu peux aussi aider à préparer l'envoi de messages SMS. Demande à qui envoyer le message et quel est le contenu si ce n'est pas précisé."
 conversation = [
-    {"role": "system", "content": "Tu es Alto, un assistant vocal intelligent, connecté et utile."}
+    {"role": "system", "content": "Tu es Alto, un assistant vocal intelligent, connecté et utile. Tu peux aussi aider à préparer l'envoi de messages SMS. Si l'utilisateur veut envoyer un message mais ne précise pas le destinataire ou le contenu, demande-lui ces informations."}
 ]
 
 # 💬 Dialogue principal
 async def ask_gpt(prompt, lat=None, lng=None):
-    from app.utils import (
-        search_web_function, weather_function, calendar_add_function,
-        calendar_read_function, calendar_get_function, get_directions_function,
-        search_web, get_weather, add_event_to_calendar, get_upcoming_events,
-        get_today_events, get_directions_from_coords
-    )
+    # NEW: On ne réimporte plus les fonctions ici, elles sont déjà définies globalement.
+    # from app.utils import (...)
 
     conversation.append({"role": "user", "content": prompt})
-    maps_url = None
+    
+    # NEW: Structure de retour standardisée
+    response_data = {
+        "text_to_speak": None,
+        "action": None # Sera { "type": "maps", "data": {"maps_url": "..."} } ou { "type": "send_message", "data": {"recipient_name": "...", "message_content": "..."} }
+    }
 
-    # 🔍 Détection manuelle d'intention de déplacement
-    keywords = ["je veux aller", "je dois aller", "emmène-moi", "rends-toi", "direction", "aller à", "je vais à", "me rendre à"]
-    if any(k in prompt.lower() for k in keywords) and lat is not None and lng is not None:
-        # 🧠 GPT utilisé uniquement pour extraire la destination proprement
-        destination_query = await client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "Tu es un extracteur de destination. Rends simplement le lieu vers lequel l'utilisateur veut aller."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        destination = destination_query.choices[0].message.content.strip()
-        print("📍 Destination extraite :", destination)
-        summary, maps_url = get_directions_from_coords(lat, lng, destination)
-        return {
-            "text": "Ok, c’est parti !",
-            "maps_url": maps_url
-        }
+    # 🔍 Détection manuelle d'intention de déplacement (gardée pour l'instant, mais pourrait aussi passer par une fonction GPT)
+    #    Cette détection manuelle est prioritaire sur l'appel GPT standard.
+    #    Si elle est déclenchée, elle ne permettra pas à GPT de gérer d'autres fonctions comme `prepare_send_message` dans le même tour.
+    #    À évaluer si c'est le comportement souhaité ou si tout devrait passer par la logique de fonction GPT.
+    keywords_direction = ["je veux aller", "je dois aller", "emmène-moi", "rends-toi", "direction", "aller à", "je vais à", "me rendre à"]
+    is_direction_intent = any(k in prompt.lower() for k in keywords_direction)
 
-    # 🤖 Sinon, requête GPT standard
-    response = await client.chat.completions.create(
-        model="gpt-4o",
-        messages=conversation,
-        functions=[
+    if is_direction_intent and lat is not None and lng is not None:
+        # Utiliser GPT pour extraire la destination proprement (comme avant)
+        try:
+            destination_query = await client.chat.completions.create(
+                model="gpt-4o", # ou gpt-3.5-turbo pour économiser si suffisant pour cette tâche
+                messages=[
+                    {"role": "system", "content": "Tu es un extracteur de destination. Rends simplement le nom du lieu vers lequel l'utilisateur veut aller, basé sur sa dernière phrase."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=50
+            )
+            destination = destination_query.choices[0].message.content.strip()
+            if destination: # Vérifier si la destination n'est pas vide
+                print("📍 Destination extraite (manuellement) :", destination)
+                summary_text, maps_link = get_directions_from_coords(lat, lng, destination) # Mode par défaut "walking"
+                
+                response_data["text_to_speak"] = summary_text
+                if maps_link:
+                    response_data["action"] = {"type": "maps", "data": {"maps_url": maps_link}}
+                
+                conversation.append({"role": "assistant", "content": summary_text}) # Ajoute la réponse au contexte
+                return response_data
+            else:
+                print("⚠️ Destination non extraite par GPT pour la détection manuelle.")
+                # Tomber dans la logique GPT standard si la destination est vide
+        except Exception as e:
+            print(f"Erreur lors de l'extraction de la destination (manuelle): {e}")
+            # Tomber dans la logique GPT standard en cas d'erreur
+
+    # 🤖 Requête GPT standard avec fonctions
+    try: # NEW: try/except pour la requête OpenAI
+        tools_to_use = [
             search_web_function,
             weather_function,
             calendar_add_function,
             calendar_read_function,
             calendar_get_function,
-            get_directions_function
-        ],
-        function_call="auto"
-    )
+            get_directions_function,
+            prepare_send_message_function # NEW: Ajout de la nouvelle fonction
+        ]
 
-    message = response.choices[0].message
+        # S'assurer que les fonctions sont bien formatées pour l'API
+        formatted_tools = [{"type": "function", "function": f} for f in tools_to_use]
 
-    if message.function_call:
-        name = message.function_call.name
-        args = eval(message.function_call.arguments)
-
-        if name == "search_web":
-            result = search_web(args["query"])
-        elif name == "get_weather":
-            result = get_weather(args["city"])
-        elif name == "add_event_to_calendar":
-            result = add_event_to_calendar(
-                args["summary"],
-                args["start_time"],
-                args.get("duration_minutes", 60)
-            )
-        elif name == "get_upcoming_events":
-            result = get_upcoming_events(args.get("max_results", 5))
-        elif name == "get_today_events":
-            result = get_today_events()
-        elif name == "get_directions":
-            if lat is not None and lng is not None:
-                result, maps_url = get_directions_from_coords(lat, lng, args["destination"], args.get("mode", "walking"))
-                result = "Ok, c’est parti !"
-            else:
-                result = "Je n’ai pas pu obtenir votre position."
-        else:
-            result = "Fonction non reconnue."
-
-        conversation.append({
-            "role": "function",
-            "name": name,
-            "content": result
-        })
-
-        followup = await client.chat.completions.create(
+        gpt_response = await client.chat.completions.create(
             model="gpt-4o",
-            messages=conversation
+            messages=conversation,
+            tools=formatted_tools, # NEW: Utilisation de 'tools' au lieu de 'functions' avec le nouveau format
+            tool_choice="auto"    # NEW: 'tool_choice' au lieu de 'function_call'
         )
-        answer = followup.choices[0].message.content.strip()
-        conversation.append({"role": "assistant", "content": answer})
-        return {
-            "text": result if maps_url else answer,
-            "maps_url": maps_url
-        }
 
-    answer = message.content.strip()
-    conversation.append({"role": "assistant", "content": answer})
-    return {"text": answer}
+        response_message = gpt_response.choices[0].message
+        tool_calls = response_message.tool_calls # NEW: Accès aux appels d'outils
 
+        if tool_calls:
+            conversation.append(response_message) # Ajoute la réponse de l'assistant (avec les tool_calls)
+            
+            available_functions = {
+                "search_web": search_web,
+                "get_weather": get_weather,
+                "add_event_to_calendar": add_event_to_calendar,
+                "get_upcoming_events": get_upcoming_events,
+                "get_today_events": get_today_events,
+                "get_directions": lambda **kwargs: get_directions_from_coords(lat, lng, **kwargs) if lat is not None and lng is not None else ("Je n'ai pas pu obtenir votre position.", None),
+                # NEW: "prepare_send_message" ne fait rien côté backend à part retourner les infos pour le frontend
+                "prepare_send_message": lambda recipient_name, message_content: {
+                    "recipient_name": recipient_name, 
+                    "message_content": message_content
+                }
+            }
 
+            for tool_call in tool_calls:
+                function_name = tool_call.function.name
+                function_to_call = available_functions.get(function_name)
+                
+                try:
+                    function_args = json.loads(tool_call.function.arguments)
+                except json.JSONDecodeError:
+                    print(f"Erreur: Arguments de la fonction {function_name} ne sont pas un JSON valide: {tool_call.function.arguments}")
+                    conversation.append({
+                        "tool_call_id": tool_call.id,
+                        "role": "tool",
+                        "name": function_name,
+                        "content": f"Erreur: arguments invalides fournis pour {function_name}.",
+                    })
+                    continue # Passe au prochain tool_call s'il y en a
+
+                if function_to_call:
+                    print(f"📞 Appel de la fonction: {function_name} avec args: {function_args}")
+                    try:
+                        if function_name == "get_directions":
+                            if lat is not None and lng is not None:
+                                # get_directions_from_coords attend destination et mode (optionnel)
+                                # GPT devrait fournir 'destination' et optionnellement 'mode'
+                                summary_text, maps_link = function_to_call(**function_args)
+                                function_response_content = summary_text # Ce que GPT verra comme résultat de la fonction
+                                response_data["text_to_speak"] = summary_text # Ce que l'utilisateur entendra initialement
+                                if maps_link:
+                                    response_data["action"] = {"type": "maps", "data": {"maps_url": maps_link}}
+                            else:
+                                function_response_content = "Je n'ai pas votre position pour calculer l'itinéraire."
+                                response_data["text_to_speak"] = function_response_content
+                        
+                        elif function_name == "prepare_send_message":
+                            # La "fonction" prepare_send_message retourne un dictionnaire avec les args
+                            action_data_sms = function_to_call(**function_args)
+                            function_response_content = f"Préparation du message pour {action_data_sms['recipient_name']}." # Ce que GPT verra
+                            # Le texte à vocaliser sera généré par le followup GPT.
+                            # On stocke l'action à faire par le frontend.
+                            response_data["action"] = {"type": "send_message", "data": action_data_sms}
+                            # On peut laisser GPT formuler la confirmation, ou en mettre une par défaut
+                            # response_data["text_to_speak"] = f"Ok, je prépare votre message pour {action_data_sms['recipient_name']}."
+
+                        else: # Pour les autres fonctions existantes
+                            function_response_content = function_to_call(**function_args)
+                            # Pour ces fonctions, le résultat de la fonction est souvent ce qu'on veut dire.
+                            # Mais il est mieux de laisser GPT formuler la réponse finale.
+                            # response_data["text_to_speak"] = function_response_content 
+
+                        conversation.append({
+                            "tool_call_id": tool_call.id,
+                            "role": "tool",
+                            "name": function_name,
+                            "content": str(function_response_content), # S'assurer que c'est une chaîne
+                        })
+                    except Exception as e:
+                        print(f"Erreur lors de l'exécution de la fonction {function_name}: {e}")
+                        conversation.append({
+                            "tool_call_id": tool_call.id,
+                            "role": "tool",
+                            "name": function_name,
+                            "content": f"Erreur lors de l'exécution de {function_name}: {str(e)}",
+                        })
+                else:
+                    print(f"Fonction {function_name} non reconnue.")
+                    conversation.append({
+                        "tool_call_id": tool_call.id,
+                        "role": "tool",
+                        "name": function_name,
+                        "content": f"Fonction {function_name} non reconnue.",
+                    })
+
+            # Obtenir une réponse finale de GPT après l'exécution des fonctions
+            second_response = await client.chat.completions.create(
+                model="gpt-4o",
+                messages=conversation
+            )
+            final_answer = second_response.choices[0].message.content.strip()
+            response_data["text_to_speak"] = final_answer # Le texte à vocaliser est la réponse finale de GPT
+            conversation.append({"role": "assistant", "content": final_answer})
+
+        else: # Pas d'appel de fonction, GPT répond directement
+            answer = response_message.content.strip()
+            response_data["text_to_speak"] = answer
+            conversation.append({"role": "assistant", "content": answer})
+
+        return response_data
+
+    except Exception as e: # NEW: Gestion d'erreur pour l'appel GPT
+        print(f"Erreur lors de l'appel à GPT: {e}")
+        response_data["text_to_speak"] = "Désolé, une erreur s'est produite lors du traitement de votre demande."
+        # On pourrait ajouter une entrée "error" dans la conversation si nécessaire
+        return response_data
 
 
 # 🎤 Transcription
@@ -418,7 +523,7 @@ async def synthesize_speech(text):
     speech = await client.audio.speech.create(
         model="tts-1",
         voice="shimmer",
-        input="Hum... " + text
+        input="Hum... " + text # Gardé tel quel, à voir si le "Hum..." est toujours pertinent
     )
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
     temp_file.write(speech.content)

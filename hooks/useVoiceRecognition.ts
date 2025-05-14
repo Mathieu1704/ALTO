@@ -7,7 +7,7 @@ import * as Linking from 'expo-linking';
 import * as Location from 'expo-location';
 import { useEffect, useRef, useState } from 'react';
 
-const API_URL = 'https://alto-api-zlw8.onrender.com/process-voice';
+const API_URL = 'https://alto-api-83dp.onrender.com/process-voice';
 
 export default function useVoiceRecognition() {
   const recordingRef = useRef<Audio.Recording | null>(null);

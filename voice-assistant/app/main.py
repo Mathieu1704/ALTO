@@ -20,37 +20,71 @@ async def process_voice(
     user_transcript = await transcribe_audio(temp_path)
     print("🎙️ Transcrit :", user_transcript)
 
-    # Envoie le texte et la géoloc au backend
+    # Appelle ask_gpt qui retourne maintenant une structure plus détaillée
     assistant_result = await ask_gpt(user_transcript, lat=lat, lng=lng)
-    assistant_text = assistant_result["text"]
-    maps_url = assistant_result.get("maps_url")
-    print("🤖 Assistant :", assistant_text)
-    print("📍 URL Google Maps :", maps_url)  # ⬅️ ajoute ceci
+    
+    # NEW: Récupération des nouvelles clés de assistant_result
+    text_to_speak = assistant_result.get("text_to_speak", "Je n'ai pas de réponse à vous donner.") # Texte pour TTS et affichage
+    action_details = assistant_result.get("action") # Peut être None ou un objet {type: "...", data: {...}}
 
-    mp3_path = await synthesize_speech(assistant_text)
-    os.remove(temp_path)
+    print("🤖 Assistant (texte à vocaliser) :", text_to_speak)
+    if action_details:
+        print(f"🎬 Action détectée : {action_details.get('type')}")
+        print(f"📊 Données de l'action : {action_details.get('data')}")
+    else:
+        print("🎬 Aucune action spécifique détectée.")
 
-    with open(mp3_path, "rb") as f:
-        audio_base64 = base64.b64encode(f.read()).decode("utf-8")
-    os.remove(mp3_path)
 
-    return JSONResponse(content={
+    # NEW: Utilisation de text_to_speak pour la synthèse vocale
+    mp3_path = await synthesize_speech(text_to_speak)
+    os.remove(temp_path) # Suppression du fichier audio temporaire de l'upload
+
+    audio_base64 = ""
+    if os.path.exists(mp3_path): # S'assurer que le fichier existe avant de lire
+        with open(mp3_path, "rb") as f:
+            audio_base64 = base64.b64encode(f.read()).decode("utf-8")
+        os.remove(mp3_path) # Suppression du fichier mp3 temporaire après lecture
+    else:
+        print(f"Erreur: Le fichier TTS {mp3_path} n'a pas été créé.")
+
+
+    # NEW: Adaptation de la réponse JSON
+    response_content = {
         "transcript": user_transcript,
-        "response": assistant_text,
+        "response_text": text_to_speak, # Le texte que l'assistant doit prononcer / afficher
         "audio": audio_base64,
-        "maps_url": maps_url
-    })
+        "action": action_details # Envoie l'objet action complet au frontend
+    }
+    
+    # Pour la compatibilité avec l'ancien frontend qui attendait "maps_url" directement:
+    # On peut l'ajouter si l'action est de type "maps"
+    # Cependant, il est préférable que le frontend s'adapte à la nouvelle structure "action"
+    # if action_details and action_details.get("type") == "maps":
+    #     response_content["maps_url"] = action_details.get("data", {}).get("maps_url")
+    # else:
+    #     response_content["maps_url"] = None
+
+
+    return JSONResponse(content=response_content)
 
 @app.post("/tts-only")
 async def tts_only(request: Request):
     data = await request.json()
     text = data.get("text", "")
+    if not text: # Petite validation
+        return JSONResponse(status_code=400, content={"error": "No text provided for TTS."})
 
     mp3_path = await synthesize_speech(text)
+    audio_base64 = ""
+    if os.path.exists(mp3_path):
+        with open(mp3_path, "rb") as f:
+            audio_base64 = base64.b64encode(f.read()).decode("utf-8")
+        os.remove(mp3_path)
+    else:
+        print(f"Erreur: Le fichier TTS {mp3_path} n'a pas été créé pour tts-only.")
+        # Peut-être retourner une erreur ici aussi ou un audio vide
+        return JSONResponse(status_code=500, content={"error": "TTS generation failed."})
 
-    with open(mp3_path, "rb") as f:
-        audio_base64 = base64.b64encode(f.read()).decode("utf-8")
-    os.remove(mp3_path)
 
     return {"audio": audio_base64}
 
