@@ -3,156 +3,139 @@ from fastapi.responses import JSONResponse
 import tempfile
 import os
 import base64
-from app.utils import transcribe_audio, ask_gpt, synthesize_speech # Assurez-vous que ce chemin est correct
+from app.utils import transcribe_audio, ask_gpt, synthesize_speech
 
 app = FastAPI()
 
 @app.post("/process-voice")
 async def process_voice(
-    file: UploadFile = File(...),
-    lat: float = Form(None), # Latitude de l'utilisateur
-    lng: float = Form(None)  # Longitude de l'utilisateur
+    file: UploadFile = File(...), # file contient file.filename et file.content_type
+    lat: float = Form(None),
+    lng: float = Form(None)
 ):
-    # 1. Enregistrer temporairement le fichier audio reçu
-    # Utilisation d'un suffixe plus générique si le format peut varier, bien que Whisper s'attende à des formats courants.
-    # Si vous êtes sûr que c'est du .wav, vous pouvez garder .wav
+    temp_audio_path = None # Pour s'assurer qu'il est défini pour le bloc finally
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".tmpaudio") as tmp:
+        # Extraire l'extension du nom de fichier original envoyé par le client
+        original_filename = file.filename
+        _, file_extension = os.path.splitext(original_filename)
+
+        # S'assurer que l'extension est l'une de celles supportées par Whisper
+        # et qu'elle correspond bien à ce que le client est censé envoyer.
+        # Notre client envoie .wav (iOS) ou .m4a (Android). Les deux sont supportés.
+        # Si l'extension est vide ou invalide, on pourrait utiliser un fallback ou rejeter.
+        if not file_extension or file_extension.lower() not in ['.flac', '.m4a', '.mp3', '.mp4', '.mpeg', '.mpga', '.oga', '.ogg', '.wav', '.webm']:
+            print(f"Extension de fichier non valide ou manquante reçue: '{original_filename}'. Tentative avec '.m4a' par défaut.")
+            # On pourrait essayer de déduire du content_type, mais l'extension est plus directe ici
+            # car notre client la spécifie.
+            # file_extension = ".m4a" # Un fallback possible.
+            # Pour l'instant, on va se fier à ce que le client envoie.
+            # Si original_filename est juste "audio" sans extension, file_extension sera vide.
+            # Dans ce cas, il faut que le client envoie bien "audio.m4a" ou "audio.wav".
+            if not file_extension: # Si vraiment aucune extension
+                 # Tenter de déduire du content_type (peut être moins fiable)
+                if file.content_type == "audio/wav":
+                    file_extension = ".wav"
+                elif file.content_type == "audio/m4a" or file.content_type == "audio/mp4": # mp4 est le conteneur pour m4a
+                    file_extension = ".m4a"
+                else:
+                    print(f"Type de contenu non géré pour fallback: {file.content_type}")
+                    file_extension = ".m4a" # Fallback ultime
+
+
+        # Utiliser l'extension correcte pour le fichier temporaire
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as tmp:
             content = await file.read()
             tmp.write(content)
             temp_audio_path = tmp.name
-    except Exception as e:
-        print(f"Erreur lors de la lecture ou sauvegarde du fichier uploadé: {e}")
-        return JSONResponse(status_code=500, content={"error": "Erreur traitement fichier audio"})
+            print(f"Fichier audio temporaire sauvegardé sous: {temp_audio_path} (original: {original_filename})")
 
-    # 2. Transcrire l'audio en texte
-    user_transcript = "" # Initialiser au cas où la transcription échoue
-    try:
-        user_transcript = await transcribe_audio(temp_audio_path)
+
+        user_transcript = await transcribe_audio(temp_audio_path) # On passe le chemin avec la bonne extension
+        # Si transcribe_audio a besoin du nom de fichier original pour le passer à l'API OpenAI:
+        # user_transcript = await transcribe_audio(temp_audio_path, original_filename=original_filename)
+
         print(f"🎙️ Transcrit : {user_transcript}")
-        if not user_transcript: # Si la transcription est vide (ex: silence)
-            print("⚠️ Transcription vide, peut-être un silence.")
-            # Vous pourriez vouloir gérer ce cas spécifiquement, ex: retourner un message "Je n'ai rien entendu"
-            # Pour l'instant, on laisse ask_gpt gérer une chaîne vide si c'est le cas.
-    except Exception as e:
-        print(f"Erreur de transcription: {e}")
-        os.remove(temp_audio_path) # Nettoyer le fichier temporaire
-        return JSONResponse(status_code=500, content={"error": "Erreur de transcription audio"})
+        # ... (le reste de ta logique)
 
-    # 3. Envoyer le texte transcrit (et la géolocalisation) à GPT pour obtenir une réponse
-    assistant_response_data = None
-    try:
-        # MODIFIÉ: ask_gpt retourne maintenant un dictionnaire plus structuré
         assistant_response_data = await ask_gpt(user_transcript, lat=lat, lng=lng)
         
-        # Extraire le texte de la réponse et les données d'action
         assistant_text_response = assistant_response_data.get("text_response")
-        action_data = assistant_response_data.get("action_data") # Peut être None
+        action_data = assistant_response_data.get("action_data")
 
         if not assistant_text_response and not action_data:
-            # Si ask_gpt retourne une réponse invalide ou vide sans action
-            print("⚠️ Réponse vide ou invalide de ask_gpt.")
-            assistant_text_response = "Je ne sais pas quoi répondre à cela." # Réponse par défaut
+            assistant_text_response = "Je ne sais pas quoi répondre à cela."
         elif not assistant_text_response and action_data:
-            # Si il y a une action mais pas de texte (ex: "Ok." implicite)
-            assistant_text_response = "Ok." # Ou un autre texte par défaut pour l'action
+            assistant_text_response = "Ok."
 
         print(f"🤖 Réponse de l'assistant (texte) : {assistant_text_response}")
         if action_data:
             print(f"🎬 Action de l'assistant : {action_data}")
 
-    except Exception as e:
-        print(f"Erreur lors de l'appel à ask_gpt: {e}")
-        os.remove(temp_audio_path)
-        # Retourner une erreur générique que le client peut vocaliser
-        error_message_for_tts = "Désolé, une erreur interne est survenue."
-        mp3_path_error = await synthesize_speech(error_message_for_tts)
-        audio_base64_error = ""
-        if mp3_path_error:
-            with open(mp3_path_error, "rb") as f_error:
-                audio_base64_error = base64.b64encode(f_error.read()).decode("utf-8")
-            os.remove(mp3_path_error)
-        
-        return JSONResponse(
-            status_code=500, 
-            content={
-                "transcript": user_transcript,
-                "response": error_message_for_tts,
-                "audio": audio_base64_error,
-                "action_data": None # Pas d'action en cas d'erreur
-            }
-        )
-
-    # 4. Synthétiser la réponse textuelle de l'assistant en audio
-    mp3_path_response = None
-    audio_base64_response = ""
-    try:
-        if assistant_text_response: # Ne synthétiser que s'il y a du texte
+        mp3_path_response = None
+        audio_base64_response = ""
+        if assistant_text_response:
             mp3_path_response = await synthesize_speech(assistant_text_response)
             if mp3_path_response:
-                with open(mp3_path_response, "rb") as f:
-                    audio_base64_response = base64.b64encode(f.read()).decode("utf-8")
-                os.remove(mp3_path_response) # Nettoyer le fichier MP3 temporaire
-            else:
-                print("⚠️ La synthèse vocale n'a pas retourné de chemin de fichier.")
-                # Peut-être fournir un audio pré-enregistré d'erreur de TTS ? Ou laisser vide.
-        else:
-            print("ℹ️ Pas de texte à synthétiser pour la réponse vocale.")
+                with open(mp3_path_response, "rb") as f_mp3:
+                    audio_base64_response = base64.b64encode(f_mp3.read()).decode("utf-8")
+                os.remove(mp3_path_response)
+        
+        return JSONResponse(content={
+            "transcript": user_transcript,
+            "response_text": assistant_text_response,
+            "audio_base64": audio_base64_response,
+            "action_data": action_data
+        })
 
     except Exception as e:
-        print(f"Erreur de synthèse vocale: {e}")
-        # Si la synthèse échoue, on envoie quand même le texte et l'action, mais sans audio.
-        # Le client devra gérer l'absence d'audio.
-        # On pourrait aussi tenter de synthétiser un message d'erreur ici.
+        print(f"Erreur majeure dans process_voice: {e}") # Log l'erreur spécifique
+        # En cas d'erreur, essayer de synthétiser un message d'erreur si possible
+        error_message_for_tts = "Désolé, une erreur interne est survenue."
+        mp3_path_error = await synthesize_speech(error_message_for_tts) # Peut aussi échouer
+        audio_base64_error = ""
+        if mp3_path_error:
+            try:
+                with open(mp3_path_error, "rb") as f_error:
+                    audio_base64_error = base64.b64encode(f_error.read()).decode("utf-8")
+                os.remove(mp3_path_error)
+            except Exception as e_tts_file:
+                print(f"Erreur gestion fichier TTS d'erreur: {e_tts_file}")
 
-    # 5. Nettoyer le fichier audio d'entrée initial
-    os.remove(temp_audio_path)
+        return JSONResponse(
+            status_code=500, # Indiquer clairement une erreur serveur
+            content={
+                "transcript": "Erreur de traitement",
+                "response_text": error_message_for_tts,
+                "audio_base64": audio_base64_error,
+                "action_data": None
+            }
+        )
+    finally:
+        if temp_audio_path and os.path.exists(temp_audio_path):
+            os.remove(temp_audio_path) # Assurer le nettoyage du fichier temporaire
 
-    # 6. Retourner la réponse JSON au client
-    # MODIFIÉ: Inclure la nouvelle structure de réponse
-    return JSONResponse(content={
-        "transcript": user_transcript,
-        "response_text": assistant_text_response, # Renommé pour clarté (était "response")
-        "audio_base64": audio_base64_response,    # Renommé pour clarté (était "audio")
-        "action_data": action_data                # Nouvelle clé pour les actions client
-    })
-
-
-@app.post("/tts-only")
-async def tts_only(request: Request):
-    try:
-        data = await request.json()
-        text_to_synthesize = data.get("text", "")
-
-        if not text_to_synthesize.strip():
-            return JSONResponse(status_code=400, content={"error": "Le texte à synthétiser ne peut pas être vide."})
-
-        mp3_path = await synthesize_speech(text_to_synthesize)
-        if not mp3_path:
-            return JSONResponse(status_code=500, content={"error": "Erreur lors de la synthèse vocale, aucun fichier audio généré."})
-
-        with open(mp3_path, "rb") as f:
-            audio_base64 = base64.b64encode(f.read()).decode("utf-8")
-        os.remove(mp3_path)
-
-        return {"audio_base64": audio_base64} # MODIFIÉ: pour cohérence
-    except Exception as e:
-        print(f"Erreur dans tts-only: {e}")
-        return JSONResponse(status_code=500, content={"error": f"Erreur interne du serveur: {str(e)}"})
-
-
+# ... (tes autres routes tts-only et transcribe-only)
+# Pour transcribe-only, la même logique d'extension s'appliquerait
 @app.post("/transcribe-only")
 async def transcribe_only(file: UploadFile = File(...)):
+    temp_path = None
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".tmpaudio") as tmp:
-            content = await file.read()
-            tmp.write(content)
+        original_filename = file.filename
+        _, file_extension = os.path.splitext(original_filename)
+        if not file_extension: # Fallback si besoin
+            if file.content_type == "audio/wav": file_extension = ".wav"
+            elif file.content_type == "audio/m4a" or file.content_type == "audio/mp4": file_extension = ".m4a"
+            else: file_extension = ".m4a"
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as tmp:
+            tmp.write(await file.read())
             temp_path = tmp.name
 
-        transcript_text = await transcribe_audio(temp_path) # MODIFIÉ: pour cohérence
-        os.remove(temp_path)
-
-        return {"transcript_text": transcript_text} # MODIFIÉ: pour cohérence
+        transcript_text = await transcribe_audio(temp_path)
+        return {"transcript_text": transcript_text}
     except Exception as e:
         print(f"Erreur dans transcribe-only: {e}")
         return JSONResponse(status_code=500, content={"error": f"Erreur interne du serveur: {str(e)}"})
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)

@@ -1,17 +1,17 @@
-import { useState, useEffect, useRef } from 'react';
-import { Platform } // NOUVEAU: Pour potentiellement différencier les schémas d'URL SMS
-from 'react-native';
-import { Audio } from 'expo-av';
-import * as FileSystem from 'expo-file-system';
-import * as Location from 'expo-location';
-import * as Linking from 'expo-linking';
-import * as Contacts from 'expo-contacts'; // NOUVEAU: Pour accéder aux contacts
-import axios from 'axios';
 import { useChatStore } from '@/store/chat-store';
 import { useSettingsStore } from '@/store/settings-store';
+import axios from 'axios';
+import { Audio } from 'expo-av';
+import * as Contacts from 'expo-contacts'; // NOUVEAU: Pour accéder aux contacts
+import * as FileSystem from 'expo-file-system';
+import * as Linking from 'expo-linking';
+import * as Location from 'expo-location';
+import { useEffect, useRef, useState } from 'react';
+import { Platform } // NOUVEAU: Pour potentiellement différencier les schémas d'URL SMS
+  from 'react-native';
 
 // Assure-toi que cette URL est correcte et accessible
-const API_URL = 'https://alto-api-zlw8.onrender.com/process-voice';
+const API_URL = 'https://alto-api-83dp.onrender.com/process-voice';
 // Pour la démo, si tu testes en local avec un backend local:
 // import { Platform } from 'react-native';
 // const API_URL = Platform.OS === 'android' ? 'http://10.0.2.2:8000/process-voice' : 'http://localhost:8000/process-voice';
