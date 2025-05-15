@@ -67,6 +67,43 @@ async def get_weather(city: str) -> dict:
         "feels_like": round(data["main"]["feels_like"])
     }
 
+# 🔮 Prévisions météo (3 h / 5 jours)
+async def get_weather_forecast(city: str, days_ahead: int = 1) -> dict:
+    """
+    Utilise l'API 5-day/3-hour forecast d'OpenWeather.
+    days_ahead = 1 → prévision la plus proche de maintenant + 24 h.
+    Renvoie un dict avec date, heure, température, ressenti et description.
+    """
+    url = "https://api.openweathermap.org/data/2.5/forecast"
+    params = {
+        "q": city,
+        "appid": OPENWEATHER_API_KEY,
+        "lang": "fr",
+        "units": "metric"
+    }
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(url, params=params)
+    if resp.status_code != 200:
+        raise RuntimeError("OpenWeather forecast API error")
+    data = resp.json()
+
+    # Calculer l'heure cible : maintenant + (days_ahead * 24 h)
+    target_dt = datetime.utcnow() + timedelta(days=days_ahead)
+    # Trouver l'entrée de forecast la plus proche de target_dt
+    best = min(
+        data["list"],
+        key=lambda e: abs(
+            datetime.fromisoformat(e["dt_txt"]) - target_dt
+        )
+    )
+    return {
+        "date": best["dt_txt"].split(" ")[0],
+        "time": best["dt_txt"].split(" ")[1],
+        "temp": round(best["main"]["temp"]),
+        "feels_like": round(best["main"]["feels_like"]),
+        "description": best["weather"][0]["description"]
+    }
+
 # 📅 Google Calendar
 async def add_event_to_calendar(summary: str, start_time: str, duration_minutes: int = 60) -> dict:
     creds = _get_google_creds()
@@ -202,6 +239,30 @@ weather_function = {
         "required": ["city"]
     }
 }
+
+forecast_function = {
+    "name": "get_weather_forecast",
+    "description": (
+        "Donne la prévision météo pour une ville X jours à l'avance "
+        "en utilisant l'API OpenWeather 5 jours/3 heures."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "city": {
+                "type": "string",
+                "description": "Nom de la ville (ex: Paris)"
+            },
+            "days_ahead": {
+                "type": "integer",
+                "description": "Nombre de jours à l'avance (1 = demain)",
+                "default": 1
+            }
+        },
+        "required": ["city"]
+    }
+}
+
 
 calendar_add_function = {
     "name": "add_event_to_calendar",
@@ -342,8 +403,10 @@ async def ask_gpt(prompt: str, lat: float = None, lng: float = None) -> dict:
         calendar_read_function,
         calendar_get_function,
         get_directions_function,
-        prepare_send_message_function
+        prepare_send_message_function,
+        forecast_function
     ]
+
     first = await client.chat.completions.create(
         model="gpt-4o",
         messages=conversation,
@@ -361,6 +424,7 @@ async def ask_gpt(prompt: str, lat: float = None, lng: float = None) -> dict:
         available = {
             "search_web": search_web,
             "get_weather": get_weather,
+            "get_weather_forecast": get_weather_forecast,
             "add_event_to_calendar": add_event_to_calendar,
             "get_upcoming_events": get_upcoming_events,
             "get_today_events": get_today_events,
