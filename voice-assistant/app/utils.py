@@ -5,6 +5,7 @@ from openai import AsyncOpenAI
 from datetime import datetime, timedelta
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+import json
 
 # Instanciation du client OpenAI (à placer au début de votre module utils.py)
 client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -324,7 +325,6 @@ conversation = [
 ]
 
 # 💬 Dialogue principal
-import json
 
 async def ask_gpt(prompt: str, lat: float = None, lng: float = None) -> dict:
     # 1) On ajoute la requête utilisateur au contexte
@@ -369,14 +369,17 @@ async def ask_gpt(prompt: str, lat: float = None, lng: float = None) -> dict:
         # Exécution de la fonction choisie
         result = await available[name](**args)
 
-        # 4) On injecte le résultat brut pour le second appel
+        # 4) On réinjecte d’abord le message assistant avec function_call
+        conversation.append(msg)
+
+        # 5) Puis on injecte le résultat brut (encodé JSON) pour le second appel
         conversation.append({
             "role": "tool",
             "name": name,
             "content": json.dumps(result)
         })
 
-        # 5) Deuxième appel GPT pour formuler la réponse naturelle
+        # 6) Deuxième appel GPT pour formuler la réponse naturelle
         second = await client.chat.completions.create(
             model="gpt-4o",
             messages=conversation
@@ -384,7 +387,7 @@ async def ask_gpt(prompt: str, lat: float = None, lng: float = None) -> dict:
         answer = second.choices[0].message.content.strip()
         response_data["text_to_speak"] = answer
 
-        # 6) Extraction de l’action pour le front
+        # 7) Extraction de l’action pour le front
         if name == "get_directions":
             response_data["action"] = {
                 "type": "maps",
