@@ -373,7 +373,7 @@ async def ask_gpt(prompt: str, lat: float = None, lng: float = None) -> dict:
         conversation.append({
             "role": "tool",
             "name": name,
-            "content": result
+            "content": json.dumps(result)
         })
 
         # 5) Deuxième appel GPT pour formuler la réponse naturelle

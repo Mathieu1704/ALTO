@@ -63,109 +63,118 @@ export default function useVoiceRecognition() {
     })();
   }, []);
 
-  // NEW: Fonction pour gérer l'envoi de SMS
-  const handleSendMessage = async (recipientName: string, messageContent: string) => {
-    // setIsProcessing(true) est déjà géré avant l'appel de cette fonction si nécessaire
-    let messageSentOrAttempted = false;
-    try {
-      const { status } = await Contacts.requestPermissionsAsync();
-      if (status !== 'granted') {
-        setError('Permission d\'accès aux contacts refusée.');
-        addMessage({ 
-          id: Date.now().toString(), 
-          role: 'assistant', 
-          content: "Je ne peux pas envoyer de message sans l'accès à vos contacts. Veuillez accorder la permission dans les réglages de votre téléphone.", 
-          timestamp: Date.now() 
-        });
-        return; // Ne pas continuer si la permission est refusée
-      }
-
-      const { data: contactsFound } = await Contacts.getContactsAsync({
-        name: recipientName,
-        fields: [Contacts.Fields.PhoneNumbers],
+  //Fonction pour gérer l'envoi de SMS
+  // 📨 Fonction pour gérer l'envoi de SMS
+const handleSendMessage = async (
+  recipientName: string,
+  messageContent: string
+) => {
+  try {
+    // 1) Demande de permission aux contacts
+    const { status } = await Contacts.requestPermissionsAsync();
+    if (status !== 'granted') {
+      setError("Permission d'accès aux contacts refusée.");
+      addMessage({
+        id: Date.now().toString(),
+        role: 'assistant',
+        content:
+          "Je ne peux pas envoyer de message sans l'accès à vos contacts. " +
+          "Veuillez accorder la permission dans les réglages de votre téléphone.",
+        timestamp: Date.now(),
       });
-
-      if (!contactsFound || contactsFound.length === 0) {
-        console.warn(`Aucun contact trouvé pour "${recipientName}"`);
-        addMessage({ 
-          id: Date.now().toString(), 
-          role: 'assistant', 
-          content: `Je n'ai pas trouvé de contact nommé "${recipientName}" dans votre répertoire.`, 
-          timestamp: Date.now() 
-        });
-        return;
-      }
-
-      if (contactsFound.length > 1) {
-        console.warn(`Plusieurs contacts trouvés pour "${recipientName}". Utilisation du premier.`);
-        // Optionnel: Informer l'utilisateur qu'on utilise le premier contact trouvé.
-        addMessage({
-            id: Date.now().toString(),
-            role: 'assistant',
-            content: `J'ai trouvé plusieurs contacts pour "${recipientName}". J'utiliserai le premier : ${contactsFound[0].name || 'Nom inconnu'}.`,
-            timestamp: Date.now()
-          });
-      }
-      const contact = contactsFound[0];
-
-      if (!contact.phoneNumbers || contact.phoneNumbers.length === 0) {
-        console.warn(`Le contact "${contact.name}" n'a pas de numéro de téléphone.`);
-        addMessage({ 
-          id: Date.now().toString(), 
-          role: 'assistant', 
-          content: `Le contact "${contact.name || 'sélectionné'}" n'a pas de numéro de téléphone enregistré.`, 
-          timestamp: Date.now() 
-        });
-        return;
-      }
-
-      let phoneNumber = contact.phoneNumbers.find(p => p.label === 'mobile')?.number;
-      if (!phoneNumber) {
-        phoneNumber = contact.phoneNumbers[0].number; // Prend le premier numéro si pas de 'mobile'
-      }
-      
-      if (!phoneNumber) {
-          console.warn(`Impossible d'extraire un numéro pour "${contact.name}"`);
-          addMessage({ id: Date.now().toString(), role: 'assistant', content: `Je n'ai pas pu récupérer de numéro pour "${contact.name || 'sélectionné'}".`, timestamp: Date.now() });
-          return;
-      }
-
-      const cleanedPhoneNumber = phoneNumber.replace(/\s+/g, ''); // Enlever les espaces
-      const encodedMessage = encodeURIComponent(messageContent);
-      const smsUrl = `sms:${cleanedPhoneNumber}?body=${encodedMessage}`;
-
-      console.log("Tentative d'ouverture de l'URL SMS :", smsUrl);
-      const supported = await Linking.canOpenURL(smsUrl);
-      if (supported) {
-        await Linking.openURL(smsUrl);
-        messageSentOrAttempted = true; // L'application SMS est ouverte
-      } else {
-        console.error("Impossible d'ouvrir l'application SMS via le lien.", smsUrl);
-        addMessage({ 
-          id: Date.now().toString(), 
-          role: 'assistant', 
-          content: "Je n'ai pas réussi à ouvrir votre application de messagerie. Veuillez vérifier si une application SMS par défaut est configurée.", 
-          timestamp: Date.now() 
-        });
-      }
-    } catch (e: any) {
-      console.error('Erreur lors de la préparation de l\'envoi du message:', e);
-      addMessage({ 
-        id: Date.now().toString(), 
-        role: 'assistant', 
-        content: `Une erreur est survenue lors de la préparation de votre message: ${e.message || "Erreur inconnue"}.`, 
-        timestamp: Date.now() 
-      });
-    } finally {
-      // setIsProcessing(false) sera géré par la logique appelante (dans setOnPlaybackStatusUpdate ou le timeout)
-      // pour s'assurer qu'il n'est pas appelé prématurément.
-      if (!messageSentOrAttempted) {
-          // Si on arrive ici et que rien n'a été tenté (ex: contact non trouvé),
-          // il faut s'assurer que setIsProcessing(false) soit appelé si handleSendMessage était la dernière action.
-          // Cependant, la gestion de setIsProcessing est complexe, mieux vaut la laisser centralisée dans stopRecording.
-      }
+      return;
     }
-  };
+
+    // 2) Recherche du contact
+    const { data: contactsFound } = await Contacts.getContactsAsync({
+      name: recipientName,
+      fields: [Contacts.Fields.PhoneNumbers],
+    });
+
+    if (!contactsFound || contactsFound.length === 0) {
+      console.warn(`Aucun contact trouvé pour "${recipientName}"`);
+      addMessage({
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: `Je n'ai pas trouvé de contact nommé "${recipientName}" dans votre répertoire.`,
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    if (contactsFound.length > 1) {
+      console.warn(
+        `Plusieurs contacts trouvés pour "${recipientName}". Utilisation du premier.`
+      );
+      addMessage({
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: `J'ai trouvé plusieurs contacts pour "${recipientName}". J'utiliserai le premier : ${
+          contactsFound[0].name || 'Nom inconnu'
+        }.`,
+        timestamp: Date.now(),
+      });
+    }
+
+    const contact = contactsFound[0];
+    if (!contact.phoneNumbers || contact.phoneNumbers.length === 0) {
+      console.warn(`Le contact "${contact.name}" n'a pas de numéro de téléphone.`);
+      addMessage({
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: `Le contact "${contact.name || 'sélectionné'}" n'a pas de numéro de téléphone enregistré.`,
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    // 3) Extraction et nettoyage du numéro
+    let phoneNumber =
+      contact.phoneNumbers.find((p) => p.label === 'mobile')?.number ||
+      contact.phoneNumbers[0].number;
+    if (!phoneNumber) {
+      console.warn(`Impossible d'extraire un numéro pour "${contact.name}"`);
+      addMessage({
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: `Je n'ai pas pu récupérer de numéro pour "${contact.name || 'sélectionné'}".`,
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    const cleanedPhoneNumber = phoneNumber.replace(/\s+/g, '');
+    const smsUrl = `sms:${cleanedPhoneNumber}?body=${encodeURIComponent(
+      messageContent
+    )}`;
+
+    // 4) Lancement de l'app SMS
+    console.log('Tentative d\'ouverture de l\'URL SMS :', smsUrl);
+    const supported = await Linking.canOpenURL(smsUrl);
+    if (supported) {
+      await Linking.openURL(smsUrl);
+    } else {
+      console.error('Impossible d\'ouvrir l\'application SMS via le lien.', smsUrl);
+      addMessage({
+        id: Date.now().toString(),
+        role: 'assistant',
+        content:
+          "Je n'ai pas réussi à ouvrir votre application de messagerie. " +
+          "Veuillez vérifier si une application SMS par défaut est configurée.",
+        timestamp: Date.now(),
+      });
+    }
+  } catch (e: any) {
+    console.error("Erreur lors de la préparation de l'envoi du message:", e);
+    addMessage({
+      id: Date.now().toString(),
+      role: 'assistant',
+      content: `Une erreur est survenue lors de la préparation de votre message: ${e.message || 'Erreur inconnue'}.`,
+      timestamp: Date.now(),
+    });
+  }
+};
+
 
   const startRecording = async () => {
     // Votre logique startRecording d'origine
@@ -408,7 +417,6 @@ export default function useVoiceRecognition() {
   };
   
   
-
   const toggleRecording = async () => {
     // Votre logique toggleRecording d'origine
     if (recordingRef.current) {
