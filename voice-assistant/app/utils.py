@@ -326,13 +326,15 @@ conversation = [
 
 # 💬 Dialogue principal
 
+import json
+
 async def ask_gpt(prompt: str, lat: float = None, lng: float = None) -> dict:
-    # 1) On ajoute la requête utilisateur au contexte
+    # 1) On ajoute l'input utilisateur
     conversation.append({"role": "user", "content": prompt})
 
     response_data = {"text_to_speak": None, "action": None}
 
-    # 2) Premier appel GPT avec la liste des fonctions
+    # 2) Premier appel GPT avec Function Calling
     tools = [
         search_web_function,
         weather_function,
@@ -350,12 +352,12 @@ async def ask_gpt(prompt: str, lat: float = None, lng: float = None) -> dict:
     )
     msg = first.choices[0].message
 
-    # 3) Si GPT a choisi une fonction, on l’exécute
+    # 3) Si GPT a déclenché un appel de fonction
     if msg.function_call:
         name = msg.function_call.name
         args = json.loads(msg.function_call.arguments)
 
-        # Mapping noms → coroutines
+        # Mapping des fonctions disponibles
         available = {
             "search_web": search_web,
             "get_weather": get_weather,
@@ -366,28 +368,36 @@ async def ask_gpt(prompt: str, lat: float = None, lng: float = None) -> dict:
             "prepare_send_message": prepare_send_message
         }
 
-        # Exécution de la fonction choisie
+        # Exécution de la fonction
         result = await available[name](**args)
 
-        # 4) On réinjecte d’abord le message assistant avec function_call
-        conversation.append(msg)
-
-        # 5) Puis on injecte le résultat brut (encodé JSON) pour le second appel
+        # 4) Réinjecter d'abord le message assistant (avec function_call)
         conversation.append({
-            "role": "tool",
+            "role": "assistant",
+            "content": msg.content,
+            "function_call": {
+                "name": name,
+                "arguments": msg.function_call.arguments
+            }
+        })
+
+        # 5) Puis injecter la réponse de la fonction avec role "function"
+        conversation.append({
+            "role": "function",
             "name": name,
             "content": json.dumps(result)
         })
 
-        # 6) Deuxième appel GPT pour formuler la réponse naturelle
+        # 6) Deuxième appel GPT pour formuler la réponse finale
         second = await client.chat.completions.create(
             model="gpt-4o",
             messages=conversation
         )
-        answer = second.choices[0].message.content.strip()
+        answer_msg = second.choices[0].message
+        answer = answer_msg.content.strip()
         response_data["text_to_speak"] = answer
 
-        # 7) Extraction de l’action pour le front
+        # 7) Extraction de l’action
         if name == "get_directions":
             response_data["action"] = {
                 "type": "maps",
@@ -402,12 +412,13 @@ async def ask_gpt(prompt: str, lat: float = None, lng: float = None) -> dict:
         conversation.append({"role": "assistant", "content": answer})
 
     else:
-        # Pas d’appel de fonction : GPT répond directement
+        # Pas d'appel de fonction : GPT répond directement
         answer = msg.content.strip()
         response_data["text_to_speak"] = answer
         conversation.append({"role": "assistant", "content": answer})
 
     return response_data
+
 
 
 
