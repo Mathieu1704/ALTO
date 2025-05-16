@@ -9,15 +9,21 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "jsEngine": "jsc",
+
+    /* -------- Splash -------- */
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+
+    /* -------- iOS -------- */
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.rork.voixactive-chat-app",
+
       "infoPlist": {
+        /* Audio (déjà présent) */
         "UIBackgroundModes": ["audio"],
         "AVAudioSessionCategory": "Playback",
         "AVAudioSessionMode": "Default",
@@ -26,25 +32,44 @@
           "allowBluetooth",
           "allowBluetoothA2DP",
           "defaultToSpeaker"
-        ]
+        ],
+
+        /* ➜ NOUVEAU  : permissions caméra / galerie */
+        "NSCameraUsageDescription": "Cette application a besoin d’accéder à l’appareil photo pour prendre des photos.",
+        "NSPhotoLibraryUsageDescription": "Cette application a besoin d’accéder à votre bibliothèque de photos pour enregistrer ou sélectionner des images."
       }
     },
+
+    /* -------- Android -------- */
     "android": {
       "package": "app.rork.voixactivechatapp",
+
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
+
       "permissions": [
+        /* Audio */
         "RECORD_AUDIO",
         "MODIFY_AUDIO_SETTINGS",
+
+        /* Stockage */
         "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
+        "WRITE_EXTERNAL_STORAGE",
+
+        /* ➜ NOUVEAU : appareil photo */
+        "CAMERA"
+        /*  (optionnel pour Android 13+ : "READ_MEDIA_IMAGES") */
       ]
     },
+
+    /* -------- Web / Favicon -------- */
     "web": {
       "favicon": "./assets/images/favicon.png"
     },
+
+    /* -------- Plugins / Router -------- */
     "plugins": [
       [
         "expo-router",
@@ -52,8 +77,10 @@
           "origin": "https://rork.app/"
         }
       ],
-      "expo-audio"
+      "expo-audio"              /* déjà présent */
     ],
+
+    /* -------- Expo Router typed routes -------- */
     "experiments": {
       "typedRoutes": true
     }

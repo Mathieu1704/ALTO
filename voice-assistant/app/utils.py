@@ -208,6 +208,21 @@ async def prepare_send_message(recipient_name: str, message_content: str) -> dic
         "message_content": message_content
     }
 
+# 📱 Appel
+async def prepare_call_contact(recipient_name: str) -> dict:
+    """
+    Prépare un appel téléphonique à un contact.
+    Ne fait pas l'envoi côté serveur, mais renvoie les données nécessaires
+    pour que le front lance l'application SMS avec le corps pré-rempli.
+    """
+    return { "recipient_name": recipient_name }
+
+#  📷 Ouvrir l’appareil photo
+async def prepare_open_camera() -> dict:
+    """Prépare l’ouverture de l’appareil photo."""
+    return {}          # rien à renvoyer, le front sait quoi faire
+
+
 
 # 📚 Fonctions accessibles par GPT
 search_web_function = {
@@ -359,7 +374,7 @@ prepare_send_message_function = {
             "message_content": {
                 "type": "string",
                 "description": (
-                    "Contenu du message. "
+                    "Contenu du message. Doit être NON vide quand tu connais le texte. "
                     "Si l'utilisateur ne l'a pas encore donné, passe simplement une chaîne vide."
                 ),
                 "default": ""    
@@ -368,6 +383,32 @@ prepare_send_message_function = {
         "required": ["recipient_name"] 
     }
 }
+
+prepare_call_contact_function = {
+    "name": "prepare_call_contact",
+    "description": (
+        "Prépare un appel téléphonique à un contact. "
+        "Appelle-la dès que tu connais le NOM du destinataire."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "recipient_name": {
+                "type": "string",
+                "description": "Nom ou surnom du destinataire (ex : Papa)"
+            }
+        },
+        "required": ["recipient_name"]
+    }
+}
+
+prepare_open_camera_function = {
+    "name": "prepare_open_camera",
+    "description": "Ouvre l'appareil photo du téléphone pour prendre une photo.",
+    "parameters": { "type": "object", "properties": {} , "required": [] }
+}
+
+
 
 
 
@@ -381,7 +422,7 @@ conversation = [
             "Ta mission est d'aider l'utilisateur, surtout les personnes peu à l'aise avec le numérique. "
             "Tu expliques de façon claire, patiente et sans jargon.\n\n"
             "CAPACITÉS  ▸  Transcription vocale, recherche web, météo, agenda Google, itinéraires Google Maps, "
-            "préparation d'envoi de SMS.\n\n"
+            "préparation d'envoi de SMS, preparation d'appel téléphonique, ouvrir l'appareil photo.\n\n"
             "RÈGLES  ▸\n"
             "1. Utilise toujours le *function calling* pour déclencher les fonctions prévues.\n"
             "2. Quand l'utilisateur veut envoyer un SMS :\n"
@@ -390,7 +431,19 @@ conversation = [
             "   • NE DEMANDE PAS le contenu du message avant de savoir qu'il existe exactement UN contact correspondant. "
             "     S'il y a plusieurs homonymes, demande d'abord lequel choisir. "
             "     S'il n'y en a aucun, informe-en l'utilisateur.\n"
-            "3. Après chaque appel de fonction, rédige la réponse finale en te basant sur les données renvoyées."
+            "     Dès que l’utilisateur fournit le contenu du SMS :\n"
+            "   • Appelle de nouveau **prepare_send_message** avec **les deux** champs "
+            "     (nom + message_content). Ne demande pas de confirmation supplémentaire.\n"
+            "      Ne réponds jamais “Je ne peux pas envoyer le message moi-même” ; laisse le front faire l’envoi.\n"
+            "3. Après chaque appel de fonction, rédige la réponse finale en te basant sur les données renvoyées. \n"
+            "Si tu as besoin de plusieurs appels de fonction, fais-les dans l'ordre et rédige la réponse finale après le dernier appel.\n"
+            "4. Quand l'utilisateur veut passer un appel :\n"
+            "   • Appelle immédiatement la fonction **prepare_call_contact** dès que tu connais le NOM du destinataire.\n"
+            "   • NE DEMANDE PAS de confirmation avant de passer l'appel.\n"
+            "5. Quand l'utilisateur veut prendre une photo :\n"
+            "   • Appelle immédiatement la fonction **prepare_open_camera**.\n"
+            "   • NE DEMANDE PAS de confirmation avant d'ouvrir l'appareil photo.\n"
+    
         )
     }
 ]
@@ -415,7 +468,9 @@ async def ask_gpt(prompt: str, lat: float = None, lng: float = None) -> dict:
         calendar_get_function,
         get_directions_function,
         prepare_send_message_function,
-        forecast_function
+        forecast_function,
+        prepare_call_contact_function,
+        prepare_open_camera_function
     ]
 
     first = await client.chat.completions.create(
@@ -440,7 +495,9 @@ async def ask_gpt(prompt: str, lat: float = None, lng: float = None) -> dict:
             "get_upcoming_events": get_upcoming_events,
             "get_today_events": get_today_events,
             "get_directions": lambda **kw: get_directions_from_coords(lat, lng, **kw),
-            "prepare_send_message": prepare_send_message
+            "prepare_send_message": prepare_send_message,
+            "prepare_call_contact": prepare_call_contact,
+            "prepare_open_camera": prepare_open_camera
         }
 
         # Exécution de la fonction
