@@ -5,25 +5,65 @@
 // /// <reference types="expo-linking" />
 // /// <reference types="expo-contacts" />
 
+import { getEventsForPeriod } from '@/app/calendarUtils';
 import { useChatStore } from '@/store/chat-store';
 import { useSettingsStore } from '@/store/settings-store';
 import axios from 'axios';
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
+import Constants from 'expo-constants';
 import * as Contacts from 'expo-contacts'; // NEW: Import Contacts
 import * as FileSystem from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import * as Linking from 'expo-linking';
 import * as Location from 'expo-location';
 import { useEffect, useRef, useState } from 'react';
-import { Platform } from 'react-native';
+import { Alert, Platform, ToastAndroid } from 'react-native';
 
-export const APP_URL_SCHEMES: Record<string,string> = {
-  youtube:  Platform.OS === 'android' ? 'vnd.youtube://' : 'youtube://',
-  spotify:  'spotify://',
-  whatsapp: 'whatsapp://',
-  facebook: 'fb://',
-  instagram:'instagram://',
+type AppInfo = {
+  scheme:   string;        // URI interne
+  storeUrl: string;        // App Store / Play Store
+  webUrl?:  string;        // fallback web (facultatif)
 };
+
+const APPS: Record<string, AppInfo> = {
+  youtube: {
+    scheme:   Platform.OS === 'android' ? 'vnd.youtube://' : 'youtube://',
+    storeUrl: Platform.OS === 'android'
+      ? 'market://details?id=com.google.android.youtube'
+      : 'itms-apps://itunes.apple.com/app/id544007664',
+    webUrl:   'https://www.youtube.com/',
+  },
+  spotify: {
+    scheme:   'spotify://',
+    storeUrl: Platform.OS === 'android'
+      ? 'market://details?id=com.spotify.music'
+      : 'itms-apps://itunes.apple.com/app/id324684580',
+    webUrl:   'https://open.spotify.com/',
+  },
+  whatsapp: {
+    scheme:   'whatsapp://',
+    storeUrl: Platform.OS === 'android'
+      ? 'market://details?id=com.whatsapp'
+      : 'itms-apps://itunes.apple.com/app/id310633997',
+    webUrl:   'https://web.whatsapp.com/',
+  },
+  facebook: {
+    scheme:   'fb://',
+    storeUrl: Platform.OS === 'android'
+      ? 'market://details?id=com.facebook.katana'
+      : 'itms-apps://itunes.apple.com/app/id284882215',
+    webUrl:   'https://facebook.com/',
+  },
+  instagram: {
+    scheme:   'instagram://',
+    storeUrl: Platform.OS === 'android'
+      ? 'market://details?id=com.instagram.android'
+      : 'itms-apps://itunes.apple.com/app/id389801252',
+    webUrl:   'https://instagram.com/',
+  },
+};
+
+  
 
 
 const API_URL = 'https://alto-api-83dp.onrender.com/process-voice';
@@ -304,42 +344,73 @@ const handleSendMessage = async (
     }
   };
 
-  const handleOpenApp = async (appName: string) => {
-  console.log('[open_app] demandé :', appName);
-  const scheme = APP_URL_SCHEMES[appName.toLowerCase()];
+  const pop = (msg: string) =>
+    Platform.OS === 'android'
+      ? ToastAndroid.show(msg, ToastAndroid.SHORT)
+      : Alert.alert('', msg);
 
-  console.log('[open_app] scheme trouvé :', scheme);
-  if (!scheme) {
-    addMessage({
-      id: Date.now().toString(),
-      role: 'assistant',
-      content: `Désolé, je ne sais pas encore ouvrir "${appName}".`,
-      timestamp: Date.now(),
-    });
-    return;
-  }
-
-  try {
-    const ok = await Linking.canOpenURL(scheme);
-    console.log('[open_app] canOpenURL =', ok);
-    if (ok) {
-      await Linking.openURL(scheme);
-    } else {
-      // appli absente : on redirige vers la version Web le cas échéant
-      const webFallback = `https://www.${appName.toLowerCase()}.com/`;
-      await Linking.openURL(webFallback);
+  const handleOpenApp = async (userText: string): Promise<void> => {
+    const key  = userText.trim().toLowerCase();
+    const app  = APPS[key];
+  
+    if (!app) {
+      pop(`Je ne connais pas encore l’application « ${userText} ».`);
+      return;
     }
-  } catch (e) {
-    console.error('handleOpenApp', e);
-    console.error('[open_app] Linking erreur', e);
+  
+    const { scheme, storeUrl, webUrl } = app;
+  
+    /* -- petite fonction utilitaire ----------------------------------- */
+    const tryOpen = async (url: string | undefined): Promise<boolean> => {
+      if (!url) return false;
+      try {
+        await Linking.openURL(url);
+        return true;
+      } catch { return false; }
+    };
+  
+    /* 1. Stand-alone build : canOpenURL est fiable  */
+    const isStandalone = Constants.appOwnership !== 'expo';
+    if (isStandalone) {
+      try {
+        const ok = await Linking.canOpenURL(scheme);
+        if (ok && (await tryOpen(scheme))) return;
+      } catch {/* ignore */}
+    }
+  
+    /* 2. Expo Go ou échec canOpenURL : on tente directement             */
+    if (await tryOpen(scheme)) return;
+  
+    /* 3. Fallback Store (toujours présent)                              */
+    if (await tryOpen(storeUrl)) return;
+  
+    /* 4. Dernier recours : site Web                                     */
+    if (await tryOpen(webUrl))   return;
+  
+    /* 5. Tout a échoué : on l’indique à l’utilisateur                   */
+    pop(`Impossible d’ouvrir ${userText}.`);
+  };
+
+  // Fonction pour lire le calendrier
+  const handleReadCalendar = async (period: string) => {
+    const spoken = await getEventsForPeriod(period);
+    // on fait parler Alto (TTS only) et on logge
+    const { data } = await axios.post(
+      TTS_ONLY_URL,
+      new URLSearchParams({ text: spoken }),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
+    );
+    if (data.audio) {
+      // même logique de lecture que pour les autres réponses
+    }
     addMessage({
       id: Date.now().toString(),
       role: 'assistant',
-      content: `Impossible d’ouvrir ${appName}.`,
+      content: spoken,
       timestamp: Date.now(),
     });
-  }
-};
+  };
+  
 
 
 
@@ -607,6 +678,8 @@ const stopRecording = async () => {
         await handleOpenCamera();
       } else if (finalAction?.type === 'open_app') {
         await handleOpenApp(finalAction.data.app_name);
+      } else if (finalAction?.type === 'read_calendar') {
+        await handleReadCalendar(finalAction.data.period);
       }
       setIsProcessing(false);
     };

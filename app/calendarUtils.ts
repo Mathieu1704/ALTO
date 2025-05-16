@@ -1,87 +1,148 @@
+// calendarUtils.ts
+import { parse } from 'date-fns';
+import { fr } from 'date-fns/locale';
 import * as Calendar from 'expo-calendar';
 
+/*--------------------------------------------------------------*/
+/* 1. Convertit période OU date précise → plage de dates         */
+/*--------------------------------------------------------------*/
 function getDateRangeFromPeriod(period: string): { start: Date; end: Date } {
-  const now = new Date();
+  const now   = new Date();
   const start = new Date(now);
-  const end = new Date(now);
+  const end   = new Date(now);
 
-  switch (period.toLowerCase()) {
-    case 'aujourd\'hui':
-      start.setHours(0, 0, 0, 0);
-      end.setHours(23, 59, 59, 999);
+  const lc = period.toLowerCase().trim();
+  const setFull = (d: Date, h: number, m = 0, s = 0, ms = 0) =>
+    d.setHours(h, m, s, ms);
+
+  /* ---------- A. Date précise yyyy-mm-dd -------------------- */
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(lc);
+  if (iso) {
+    const [_, y, m, d] = iso;
+    const s = new Date(Number(y), Number(m) - 1, Number(d), 0, 0, 0, 0);
+    const e = new Date(s); e.setHours(23, 59, 59, 999);
+    return { start: s, end: e };
+  }
+
+  /* ---------- B. Date précise dd/mm/yyyy ou dd-mm-yyyy ------- */
+  const frNum = /^(\d{2})[\/\-](\d{2})[\/\-](\d{4})$/.exec(lc);
+  if (frNum) {
+    const [_, d, m, y] = frNum;
+    const s = new Date(Number(y), Number(m) - 1, Number(d), 0, 0, 0, 0);
+    const e = new Date(s); e.setHours(23, 59, 59, 999);
+    return { start: s, end: e };
+  }
+
+  /* ---------- C. “20 mai 2025” ou “20 mai” ------------------- */
+  try {
+    const parsed = parse(lc, 'd MMM yyyy', new Date(), { locale: fr });
+    if (!isNaN(parsed.getTime())) {
+      const s = new Date(parsed.setHours(0, 0, 0, 0));
+      const e = new Date(parsed.setHours(23, 59, 59, 999));
+      return { start: s, end: e };
+    }
+  } catch { /* ignore parse errors */ }
+
+  try {
+    const parsedNoYear = parse(lc, 'd MMM', new Date(), { locale: fr });
+    if (!isNaN(parsedNoYear.getTime())) {
+      const year = parsedNoYear.getFullYear() === 1900
+        ? now.getFullYear()
+        : parsedNoYear.getFullYear();
+      parsedNoYear.setFullYear(year);
+      if (parsedNoYear < now) parsedNoYear.setFullYear(year + 1); // date déjà passée
+      const s = new Date(parsedNoYear.setHours(0, 0, 0, 0));
+      const e = new Date(parsedNoYear.setHours(23, 59, 59, 999));
+      return { start: s, end: e };
+    }
+  } catch { /* ignore parse errors */ }
+
+  /* ---------- D. Périodes relatives -------------------------- */
+  switch (lc) {
+    case "aujourd'hui":
+    case 'today':
+      setFull(start, 0);
+      setFull(end, 23, 59, 59, 999);
       break;
 
     case 'demain':
+    case 'tomorrow':
       start.setDate(start.getDate() + 1);
-      start.setHours(0, 0, 0, 0);
       end.setDate(start.getDate());
-      end.setHours(23, 59, 59, 999);
+      setFull(start, 0);
+      setFull(end, 23, 59, 59, 999);
       break;
 
     case 'cette semaine':
-      const day = now.getDay(); // 0 (dim) à 6 (sam)
-      const diffToMonday = day === 0 ? -6 : 1 - day;
-      start.setDate(start.getDate() + diffToMonday);
-      start.setHours(0, 0, 0, 0);
+    case 'this week': {
+      const diffMon = (now.getDay() + 6) % 7; // 0 = lundi
+      start.setDate(start.getDate() - diffMon);
       end.setDate(start.getDate() + 6);
-      end.setHours(23, 59, 59, 999);
+      setFull(start, 0);
+      setFull(end, 23, 59, 59, 999);
       break;
+    }
 
     case 'ce week-end':
-      const saturday = new Date(now);
-      saturday.setDate(now.getDate() + ((6 - now.getDay()) % 7));
-      saturday.setHours(0, 0, 0, 0);
-      const sunday = new Date(saturday);
-      sunday.setDate(saturday.getDate() + 1);
-      sunday.setHours(23, 59, 59, 999);
-      return { start: saturday, end: sunday };
+    case 'week-end': {
+      const toSat = (6 - now.getDay() + 7) % 7; // samedi
+      start.setDate(now.getDate() + toSat);
+      end.setDate(start.getDate() + 1);
+      setFull(start, 0);
+      setFull(end, 23, 59, 59, 999);
+      break;
+    }
 
     case 'semaine prochaine':
-      const nextMonday = new Date(now);
-      const offset = (8 - now.getDay()) % 7;
-      nextMonday.setDate(now.getDate() + offset);
-      nextMonday.setHours(0, 0, 0, 0);
-      const nextSunday = new Date(nextMonday);
-      nextSunday.setDate(nextMonday.getDate() + 6);
-      nextSunday.setHours(23, 59, 59, 999);
-      return { start: nextMonday, end: nextSunday };
+    case 'next week': {
+      const toNextMon = (8 - now.getDay()) % 7 || 7;
+      start.setDate(now.getDate() + toNextMon);
+      end.setDate(start.getDate() + 6);
+      setFull(start, 0);
+      setFull(end, 23, 59, 59, 999);
+      break;
+    }
 
     default:
-      start.setHours(0, 0, 0, 0);
-      end.setHours(23, 59, 59, 999);
-      break;
+      setFull(start, 0);
+      setFull(end, 23, 59, 59, 999);
   }
 
   return { start, end };
 }
 
+/*--------------------------------------------------------------*/
+/* 2. Récupère et formate les événements                         */
+/*--------------------------------------------------------------*/
 export async function getEventsForPeriod(period: string): Promise<string> {
   const { status } = await Calendar.requestCalendarPermissionsAsync();
   if (status !== 'granted') {
-    return "Permission refusée pour accéder au calendrier.";
+    return "Je n'ai pas la permission d'accéder à ton agenda.";
   }
 
-  const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
+  const calendars   = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
   const calendarIds = calendars.map(c => c.id);
 
   const { start, end } = getDateRangeFromPeriod(period);
 
   const events = await Calendar.getEventsAsync(calendarIds, start, end);
 
-  if (events.length === 0) {
-    return `Tu n'as aucun événement prévu pour ${period}.`;
+  if (!events.length) {
+    return `Aucun événement prévu ${
+      period === "aujourd'hui" ? 'aujourd’hui' : `pour ${period}`
+    }.`;
   }
 
-  let result = `Voici tes événements pour ${period} :\n`;
-  for (const e of events) {
-    const startDate = new Date(e.startDate);
-    const endDate = new Date(e.endDate);
+  const fmt = new Intl.DateTimeFormat('fr-FR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 
-    const startTime = startDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-    const endTime = endDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  const lines = events.map(ev => {
+    const deb = fmt.format(new Date(ev.startDate));
+    const fin = fmt.format(new Date(ev.endDate));
+    return `• “${ev.title || 'Événement'}” de ${deb} à ${fin}`;
+  });
 
-    result += `• Tu as "${e.title ?? "un événement"}" prévu de ${startTime} à ${endTime} heures.\n`;
-  }
-
-  return result.trim();
+  return `Voici tes événements ${period} :\n${lines.join('\n')}`;
 }

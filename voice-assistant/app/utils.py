@@ -230,6 +230,14 @@ async def prepare_open_app(app_name: str) -> dict:
     """
     return {"app_name": app_name}
 
+# 📅 Lire le calendrier natif
+async def read_local_calendar(period: str) -> dict:
+    """
+    Stub côté serveur : renvoie simplement la période demandée.
+    Le vrai accès au calendrier se fait dans l’app (Expo Calendar).
+    """
+    return {"period": period}
+
 
 
 # 📚 Fonctions accessibles par GPT
@@ -431,6 +439,27 @@ open_app_function = {
     }
 }
 
+read_local_calendar_function = {
+    "name": "read_local_calendar",
+    "description": (
+        "Demande au téléphone de lire les événements du calendrier natif "
+        "(iOS/Android) pour une période donnée."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "period": {
+                "type": "string",
+                "description": (
+                    "Période en langage naturel : "
+                    "aujourd'hui, demain, cette semaine, ce week-end, semaine prochaine."
+                )
+            }
+        },
+        "required": ["period"]
+    }
+}
+
 
 
 
@@ -468,6 +497,8 @@ conversation = [
             "   • NE DEMANDE PAS de confirmation avant d'ouvrir l'appareil photo.\n"
             "6. Quand l'utilisateur veut ouvrir une application :\n"
             "   • Appelle immédiatement la fonction **prepare_open_app** dès que tu connais le NOM de l'application.\n"
+            "7. Quand l'utilisateur veut connaitre son emploi du temps  :\n"
+            "   • Appelle immédiatement la fonction **read_local_calendar** dès que tu connais la période .\n"
         )
     }
 ]
@@ -495,7 +526,8 @@ async def ask_gpt(prompt: str, lat: float = None, lng: float = None) -> dict:
         forecast_function,
         prepare_call_contact_function,
         prepare_open_camera_function,
-        open_app_function
+        open_app_function,
+        read_local_calendar_function
     ]
 
     first = await client.chat.completions.create(
@@ -523,7 +555,8 @@ async def ask_gpt(prompt: str, lat: float = None, lng: float = None) -> dict:
             "prepare_send_message": prepare_send_message,
             "prepare_call_contact": prepare_call_contact,
             "prepare_open_camera": prepare_open_camera,
-            "prepare_open_app": prepare_open_app
+            "prepare_open_app": prepare_open_app,
+            "read_local_calendar": read_local_calendar
         }
 
         # Exécution de la fonction
@@ -581,6 +614,12 @@ async def ask_gpt(prompt: str, lat: float = None, lng: float = None) -> dict:
                 "type": "open_app",
                 "data": result          
             }
+        elif name == "read_local_calendar":
+            response_data["action"] = {
+                "type": "read_calendar",
+                "data": result         
+            }
+
 
         
 
