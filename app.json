@@ -34,7 +34,21 @@
           "defaultToSpeaker"
         ],
 
-        /* ➜ NOUVEAU  : permissions caméra / galerie */
+        /* ➜ NOUVEAU : schémas qu’on veut pouvoir interroger avec Linking.canOpenURL */
+        "LSApplicationQueriesSchemes": [
+          "youtube",          /* + */
+          "vnd.youtube",      /* + Android-style URI sous iOS 15+ */
+          "spotify",          /* + */
+          "whatsapp",         /* + */
+          "fb",               /* + Facebook */
+          "instagram"         /* + */
+        ],
+
+        /* ➜ NOUVEAU : messages d’autorisation manquants */
+        "NSContactsUsageDescription": "Cette application a besoin d’accéder à vos contacts pour envoyer des messages et passer des appels.",   /* + */
+        "NSLocationWhenInUseUsageDescription": "Cette application utilise votre position pour vous donner la météo ou calculer un itinéraire.", /* + */
+
+        /* Caméra & galerie (déjà dans ton fichier) */
         "NSCameraUsageDescription": "Cette application a besoin d’accéder à l’appareil photo pour prendre des photos.",
         "NSPhotoLibraryUsageDescription": "Cette application a besoin d’accéder à votre bibliothèque de photos pour enregistrer ou sélectionner des images."
       }
@@ -58,9 +72,26 @@
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE",
 
-        /* ➜ NOUVEAU : appareil photo */
-        "CAMERA"
-        /*  (optionnel pour Android 13+ : "READ_MEDIA_IMAGES") */
+        /* ➜ Caméra */
+        "CAMERA",
+
+        /* ➜ NOUVEAU : accès contacts & localisation (déjà nécessaires) */
+        "READ_CONTACTS",              /* + */
+        "ACCESS_FINE_LOCATION"        /* + */
+        /* Optionnel Android 13 +: "READ_MEDIA_IMAGES", "POST_NOTIFICATIONS" */
+      ],
+
+      /* ➜ NOUVEAU : intent filters facultatifs pour ouvrir directement YouTube/Spotify
+         (pas indispensable ; Linking.canOpenURL suffit) */
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [
+            { "scheme": "youtube" },
+            { "scheme": "vnd.youtube" }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
       ]
     },
 
@@ -77,7 +108,7 @@
           "origin": "https://rork.app/"
         }
       ],
-      "expo-audio"              /* déjà présent */
+      "expo-audio"
     ],
 
     /* -------- Expo Router typed routes -------- */

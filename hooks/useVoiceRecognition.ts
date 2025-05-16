@@ -15,13 +15,14 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Linking from 'expo-linking';
 import * as Location from 'expo-location';
 import { useEffect, useRef, useState } from 'react';
+import { Platform } from 'react-native';
 
-const APP_URL_SCHEMES: Record<string, string> = {
-  youtube: 'youtube://',
-  spotify: 'spotify://',
+export const APP_URL_SCHEMES: Record<string,string> = {
+  youtube:  Platform.OS === 'android' ? 'vnd.youtube://' : 'youtube://',
+  spotify:  'spotify://',
   whatsapp: 'whatsapp://',
   facebook: 'fb://',
-  instagram: 'instagram://',
+  instagram:'instagram://',
 };
 
 
@@ -304,7 +305,10 @@ const handleSendMessage = async (
   };
 
   const handleOpenApp = async (appName: string) => {
+  console.log('[open_app] demandé :', appName);
   const scheme = APP_URL_SCHEMES[appName.toLowerCase()];
+
+  console.log('[open_app] scheme trouvé :', scheme);
   if (!scheme) {
     addMessage({
       id: Date.now().toString(),
@@ -317,6 +321,7 @@ const handleSendMessage = async (
 
   try {
     const ok = await Linking.canOpenURL(scheme);
+    console.log('[open_app] canOpenURL =', ok);
     if (ok) {
       await Linking.openURL(scheme);
     } else {
@@ -326,6 +331,7 @@ const handleSendMessage = async (
     }
   } catch (e) {
     console.error('handleOpenApp', e);
+    console.error('[open_app] Linking erreur', e);
     addMessage({
       id: Date.now().toString(),
       role: 'assistant',
