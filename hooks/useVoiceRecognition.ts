@@ -16,6 +16,15 @@ import * as Linking from 'expo-linking';
 import * as Location from 'expo-location';
 import { useEffect, useRef, useState } from 'react';
 
+const APP_URL_SCHEMES: Record<string, string> = {
+  youtube: 'youtube://',
+  spotify: 'spotify://',
+  whatsapp: 'whatsapp://',
+  facebook: 'fb://',
+  instagram: 'instagram://',
+};
+
+
 const API_URL = 'https://alto-api-83dp.onrender.com/process-voice';
 const TTS_ONLY_URL = 'https://alto-api-83dp.onrender.com/tts-only';
 
@@ -294,8 +303,37 @@ const handleSendMessage = async (
     }
   };
 
+  const handleOpenApp = async (appName: string) => {
+  const scheme = APP_URL_SCHEMES[appName.toLowerCase()];
+  if (!scheme) {
+    addMessage({
+      id: Date.now().toString(),
+      role: 'assistant',
+      content: `Désolé, je ne sais pas encore ouvrir "${appName}".`,
+      timestamp: Date.now(),
+    });
+    return;
+  }
 
-
+  try {
+    const ok = await Linking.canOpenURL(scheme);
+    if (ok) {
+      await Linking.openURL(scheme);
+    } else {
+      // appli absente : on redirige vers la version Web le cas échéant
+      const webFallback = `https://www.${appName.toLowerCase()}.com/`;
+      await Linking.openURL(webFallback);
+    }
+  } catch (e) {
+    console.error('handleOpenApp', e);
+    addMessage({
+      id: Date.now().toString(),
+      role: 'assistant',
+      content: `Impossible d’ouvrir ${appName}.`,
+      timestamp: Date.now(),
+    });
+  }
+};
 
 
 
@@ -405,10 +443,15 @@ const stopRecording = async () => {
 
     /* 4 — Envoi au backend */
     const fd = new FormData();
-    fd.append('file', { uri, name: `audio.${uri.split('.').pop()}`, type: uri.endsWith('.wav') ? 'audio/wav' : 'audio/webm' } as any);
+    fd.append(
+      'file',
+      { uri, name: `audio.${uri.split('.').pop()}`, type: uri.endsWith('.wav') ? 'audio/wav' : 'audio/webm' } as any,
+    );
     if (lat && lng) { fd.append('lat', String(lat)); fd.append('lng', String(lng)); }
 
-    const { data } = await axios.post(API_URL, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+    const { data } = await axios.post(API_URL, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
     const { transcript, response_text, audio: backendAudio64, action } = data;
 
     /* 5 — État de travail */
@@ -422,7 +465,7 @@ const stopRecording = async () => {
         const r = await axios.post(
           TTS_ONLY_URL,
           new URLSearchParams({ text: finalText }).toString(),
-          { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+          { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
         );
         audio64 = r.data.audio || '';
       } catch (e) { console.error('regenTTS', e); audio64 = ''; }
@@ -499,7 +542,7 @@ const stopRecording = async () => {
     }
 
     /* ------------------------------------------------------------------ */
-    /* 8 — open_camera (si tu l’as ajoutée côté backend)                   */
+    /* 8 — open_camera                                                    */
     /* ------------------------------------------------------------------ */
     if (action?.type === 'open_camera') {
       /* Ici pas de vérification : on lance directement */
@@ -507,7 +550,15 @@ const stopRecording = async () => {
       // on peut aussi laisser finalText vide si on ne veut pas parler
     }
 
-    /* 9 — Lecture du MP3 ------------------------------------------------ */
+    /* ------------------------------------------------------------------ */
+    /* 9 — open_app                                                       */
+    /* ------------------------------------------------------------------ */
+    if (action?.type === 'open_app') {
+      finalAction = { type: 'open_app', data: { app_name: action.data.app_name } };
+      // Pas de vérification ici : le front se charge de tester Linking.canOpenURL
+    }
+
+    /* 10 — Lecture du MP3 ---------------------------------------------- */
     const sound = new Audio.Sound();
     let soundLoaded = false;
     if (audio64) {
@@ -516,25 +567,30 @@ const stopRecording = async () => {
       await FileSystem.writeAsStringAsync(mp3Path, audio64, { encoding: FileSystem.EncodingType.Base64 });
 
       await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false, playsInSilentModeIOS: true,
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
         interruptionModeIOS: InterruptionModeIOS.DuckOthers,
         staysActiveInBackground: false,
         interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
-        shouldDuckAndroid: false, playThroughEarpieceAndroid: false,
+        shouldDuckAndroid: false,
+        playThroughEarpieceAndroid: false,
       });
 
-      try { await sound.loadAsync({ uri: mp3Path }); await sound.playAsync(); soundLoaded = true; }
-      catch (e) { console.error('TTS play', e); }
+      try {
+        await sound.loadAsync({ uri: mp3Path });
+        await sound.playAsync();
+        soundLoaded = true;
+      } catch (e) { console.error('TTS play', e); }
     }
 
-    /* 10 — Logs */
+    /* 11 — Logs */
     if (saveTranscripts && finalText) {
       const now = Date.now();
       addMessage({ id: now.toString(),       role: 'user',      content: transcript?.trim() || '[Audio]', timestamp: now });
       addMessage({ id: (now + 1).toString(), role: 'assistant', content: finalText.trim(),               timestamp: now + 1 });
     }
 
-    /* 11 — Exécute l’action validée */
+    /* 12 — Exécute l’action validée */
     const runAction = async () => {
       if (finalAction?.type === 'send_message') {
         await handleSendMessage(finalAction.data.recipient_name,
@@ -543,6 +599,8 @@ const stopRecording = async () => {
         await handleCallContact(finalAction.data.recipient_name);
       } else if (finalAction?.type === 'open_camera') {
         await handleOpenCamera();
+      } else if (finalAction?.type === 'open_app') {
+        await handleOpenApp(finalAction.data.app_name);
       }
       setIsProcessing(false);
     };
@@ -561,7 +619,9 @@ const stopRecording = async () => {
   } catch (e: any) {
     console.error('stopRecording error:', e);
     setError(`Erreur traitement vocal : ${e.message || 'Inconnue'}`);
-    addMessage({ id: Date.now().toString(), role: 'assistant',
+    addMessage({
+      id: Date.now().toString(),
+      role: 'assistant',
       content: `Une erreur est survenue : ${e.message || 'Inconnue'}.`,
       timestamp: Date.now(),
     });
@@ -572,6 +632,7 @@ const stopRecording = async () => {
     }
   }
 };
+
 
 
   

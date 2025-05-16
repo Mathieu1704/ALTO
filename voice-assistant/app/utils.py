@@ -222,6 +222,14 @@ async def prepare_open_camera() -> dict:
     """Prépare l’ouverture de l’appareil photo."""
     return {}          # rien à renvoyer, le front sait quoi faire
 
+# 📱 Ouvrir une application
+async def prepare_open_app(app_name: str) -> dict:
+    """
+    Prépare l’ouverture d’une application installée sur le téléphone.
+    L’argument app_name est un nom “humain” (YouTube, WhatsApp…).
+    """
+    return {"app_name": app_name}
+
 
 
 # 📚 Fonctions accessibles par GPT
@@ -408,6 +416,20 @@ prepare_open_camera_function = {
     "parameters": { "type": "object", "properties": {} , "required": [] }
 }
 
+open_app_function = {
+    "name": "prepare_open_app",
+    "description": "Ouvre une application installée sur l'appareil de l'utilisateur (YouTube, Facebook, Spotify…).",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "app_name": {
+                "type": "string",
+                "description": "Nom de l'application à ouvrir (ex: YouTube)"
+            }
+        },
+        "required": ["app_name"]
+    }
+}
 
 
 
@@ -444,7 +466,8 @@ conversation = [
             "5. Quand l'utilisateur veut prendre une photo :\n"
             "   • Appelle immédiatement la fonction **prepare_open_camera**.\n"
             "   • NE DEMANDE PAS de confirmation avant d'ouvrir l'appareil photo.\n"
-    
+            "6. Quand l'utilisateur veut ouvrir une application :\n"
+            "   • Appelle immédiatement la fonction **prepare_open_app** dès que tu connais le NOM de l'application.\n"
         )
     }
 ]
@@ -471,7 +494,8 @@ async def ask_gpt(prompt: str, lat: float = None, lng: float = None) -> dict:
         prepare_send_message_function,
         forecast_function,
         prepare_call_contact_function,
-        prepare_open_camera_function
+        prepare_open_camera_function,
+        open_app_function
     ]
 
     first = await client.chat.completions.create(
@@ -498,7 +522,8 @@ async def ask_gpt(prompt: str, lat: float = None, lng: float = None) -> dict:
             "get_directions": lambda **kw: get_directions_from_coords(lat, lng, **kw),
             "prepare_send_message": prepare_send_message,
             "prepare_call_contact": prepare_call_contact,
-            "prepare_open_camera": prepare_open_camera
+            "prepare_open_camera": prepare_open_camera,
+            "prepare_open_app": prepare_open_app
         }
 
         # Exécution de la fonction
@@ -551,6 +576,12 @@ async def ask_gpt(prompt: str, lat: float = None, lng: float = None) -> dict:
                 "type": "open_camera",
                 "data": result
             }
+        elif name == "prepare_open_app":
+            response_data["action"] = {
+                "type": "open_app",
+                "data": result          
+            }
+
         
 
         conversation.append({"role": "assistant", "content": answer})
