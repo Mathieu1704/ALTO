@@ -375,11 +375,14 @@ const handleSendMessage = async (
  *  • Gère deux actions : send_message  ❚  make_call
  *  • Ouvre l’app SMS ou Téléphone uniquement quand tout est validé
  */
+/* -------------------------------------------------------------------- */
+/* stopRecording  –  version définitive                                 */
+/* -------------------------------------------------------------------- */
 const stopRecording = async () => {
-  let mp3FilePathToDelete: string | null = null;
+  let mp3FilePath: string | null = null;
 
   try {
-    /* 1 — STOP & UNLOAD micro */
+    /* 1 — Stoppe l’enregistrement */
     const rec = recordingRef.current;
     if (!rec) return;
     await rec.stopAndUnloadAsync();
@@ -392,27 +395,28 @@ const stopRecording = async () => {
     const uri = rec.getURI();
     if (!uri) { setIsProcessing(false); return; }
 
-    /* 3 — Position (facultatif) */
-    const { status: locStatus } = await Location.requestForegroundPermissionsAsync();
+    /* 3 — Position (optionnelle) */
     let lat: number | null = null, lng: number | null = null;
-    if (locStatus === 'granted') {
-      const p = await Location.getCurrentPositionAsync({});
-      lat = p.coords.latitude; lng = p.coords.longitude;
+    const locPerm = await Location.requestForegroundPermissionsAsync();
+    if (locPerm.status === 'granted') {
+      const pos = await Location.getCurrentPositionAsync({});
+      lat = pos.coords.latitude; lng = pos.coords.longitude;
     }
 
-    /* 4 — Appel backend */
+    /* 4 — Envoi au backend */
     const fd = new FormData();
     fd.append('file', { uri, name: `audio.${uri.split('.').pop()}`, type: uri.endsWith('.wav') ? 'audio/wav' : 'audio/webm' } as any);
-    if (lat && lng) { fd.append('lat', lat.toString()); fd.append('lng', lng.toString()); }
+    if (lat && lng) { fd.append('lat', String(lat)); fd.append('lng', String(lng)); }
 
     const { data } = await axios.post(API_URL, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
     const { transcript, response_text, audio: backendAudio64, action } = data;
 
-    /* 5 — Initial */
+    /* 5 — État de travail */
     let finalText   = response_text || '';
     let finalAction = action;
-    let audioBase64 = backendAudio64;     // sera remplacé si on change finalText
+    let audio64     = backendAudio64;
 
+    /* Génère un nouveau MP3 pour finalText */
     const regenTTS = async () => {
       try {
         const r = await axios.post(
@@ -420,92 +424,92 @@ const stopRecording = async () => {
           new URLSearchParams({ text: finalText }).toString(),
           { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
         );
-        audioBase64 = r.data.audio || '';
-      } catch (e) { console.error('regenTTS', e); audioBase64 = ''; }
+        audio64 = r.data.audio || '';
+      } catch (e) { console.error('regenTTS', e); audio64 = ''; }
     };
 
     /* ------------------------------------------------------------------ */
-    /* 6 — LOGIQUE « send_message »                                       */
+    /* 6 — send_message                                                   */
     /* ------------------------------------------------------------------ */
     if (action?.type === 'send_message') {
+      const name = action.data.recipient_name;
+      const sms  = (action.data.message_content || '').trim();
 
-      /* ignorer le MP3/question du backend tant que le texte est vide */
-      if (action.data.message_content === '') { finalText = ''; audioBase64 = ''; }
+      /* si le texte est vide on annule l’action immédiatement */
+      if (!sms) finalAction = null;
 
+      /* permission contacts */
       const { status: perm } = await Contacts.requestPermissionsAsync();
       if (perm !== 'granted') {
-        finalText = "Je ne peux pas envoyer de message sans l'accès à vos contacts. Veuillez accorder la permission.";
-        finalAction = null;
+        finalText = "Je ne peux pas envoyer de message sans l'accès à vos contacts.";
         await regenTTS();
       } else {
         const { data: found } = await Contacts.getContactsAsync({
-          name: action.data.recipient_name,
-          fields: [Contacts.Fields.PhoneNumbers],
+          name, fields: [Contacts.Fields.PhoneNumbers],
         });
 
         if (found.length === 0) {
-          finalText = `Je n'ai pas trouvé de contact nommé "${action.data.recipient_name}".`;
-          finalAction = null;
+          finalText = `Je n'ai pas trouvé de contact nommé "${name}".`;
           await regenTTS();
         } else if (found.length > 1) {
-          const names = found.map(c => c.name).join('", "');
-          finalText = `J'ai trouvé plusieurs contacts nommés "${action.data.recipient_name}" : "${names}". Lequel voulez-vous ?`;
-          finalAction = null;
+          const list = found.map(c => c.name).join('", "');
+          finalText  = `J'ai trouvé plusieurs contacts nommés "${name}" : "${list}". Lequel voulez-vous ?`;
           await regenTTS();
-        } else {
-          if (action.data.message_content === '') {
-            finalText = `Quel message souhaitez-vous envoyer à ${found[0].name} ?`;
-            finalAction = null;
-            await regenTTS();
-          }
+        } else if (!sms) {
+          /* 1 seul contact mais pas encore de texte */
+          finalText = `Quel message souhaitez-vous envoyer à ${found[0].name} ?`;
+          await regenTTS();
         }
       }
     }
 
     /* ------------------------------------------------------------------ */
-    /* 7 — LOGIQUE « make_call »                                          */
+    /* 7 — make_call                                                      */
     /* ------------------------------------------------------------------ */
     if (action?.type === 'make_call') {
-
-      /* on ignore tout MP3/question initial */
-      finalText = ''; audioBase64 = '';
+      const name = action.data.recipient_name;
+      finalAction = null;        // on re-décidera plus bas
 
       const { status: perm } = await Contacts.requestPermissionsAsync();
       if (perm !== 'granted') {
-        finalText = "Je ne peux pas appeler sans l'accès à vos contacts. Veuillez accorder la permission.";
-        finalAction = null;
+        finalText = "Je ne peux pas appeler sans l'accès à vos contacts.";
         await regenTTS();
       } else {
         const { data: found } = await Contacts.getContactsAsync({
-          name: action.data.recipient_name,
-          fields: [Contacts.Fields.PhoneNumbers],
+          name, fields: [Contacts.Fields.PhoneNumbers],
         });
 
         if (found.length === 0) {
-          finalText = `Je n'ai pas trouvé de contact nommé "${action.data.recipient_name}".`;
-          finalAction = null;
+          finalText = `Je n'ai pas trouvé de contact nommé "${name}".`;
           await regenTTS();
         } else if (found.length > 1) {
-          const names = found.map(c => c.name).join('", "');
-          finalText = `J'ai trouvé plusieurs contacts nommés "${action.data.recipient_name}" : "${names}". Lequel voulez-vous ?`;
-          finalAction = null;
+          const list = found.map(c => c.name).join('", "');
+          finalText  = `J'ai trouvé plusieurs contacts nommés "${name}" : "${list}". Lequel voulez-vous ?`;
           await regenTTS();
         } else {
-          // un seul contact → on peut lancer l'appel sans poser d'autre question
-          finalText = `J'appelle ${found[0].name}.`;
-          await regenTTS();                      // petite confirmation vocale
+          finalText   = `J'appelle ${found[0].name}.`;
+          await regenTTS();
           finalAction = { type: 'make_call', data: { recipient_name: found[0].name } };
         }
       }
     }
 
-    /* 8 — Lecture du MP3 ------------------------------------------------ */
+    /* ------------------------------------------------------------------ */
+    /* 8 — open_camera (si tu l’as ajoutée côté backend)                   */
+    /* ------------------------------------------------------------------ */
+    if (action?.type === 'open_camera') {
+      /* Ici pas de vérification : on lance directement */
+      finalAction = { type: 'open_camera', data: {} };
+      // on peut aussi laisser finalText vide si on ne veut pas parler
+    }
+
+    /* 9 — Lecture du MP3 ------------------------------------------------ */
     const sound = new Audio.Sound();
     let soundLoaded = false;
-    if (audioBase64) {
+    if (audio64) {
       const mp3Path = FileSystem.documentDirectory + 'response.mp3';
-      mp3FilePathToDelete = mp3Path;
-      await FileSystem.writeAsStringAsync(mp3Path, audioBase64, { encoding: FileSystem.EncodingType.Base64 });
+      mp3FilePath = mp3Path;
+      await FileSystem.writeAsStringAsync(mp3Path, audio64, { encoding: FileSystem.EncodingType.Base64 });
 
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false, playsInSilentModeIOS: true,
@@ -519,60 +523,52 @@ const stopRecording = async () => {
       catch (e) { console.error('TTS play', e); }
     }
 
-    /* 9 — Journal de chat ---------------------------------------------- */
+    /* 10 — Logs */
     if (saveTranscripts && finalText) {
       const now = Date.now();
-      addMessage({ id: now.toString(),       role: 'user',      content: transcript?.trim() || '[Message audio]', timestamp: now });
-      addMessage({ id: (now + 1).toString(), role: 'assistant', content: finalText.trim(),                       timestamp: now + 1 });
+      addMessage({ id: now.toString(),       role: 'user',      content: transcript?.trim() || '[Audio]', timestamp: now });
+      addMessage({ id: (now + 1).toString(), role: 'assistant', content: finalText.trim(),               timestamp: now + 1 });
     }
 
-    /* 10 — Action réelle ------------------------------------------------ */
-    const doAction = async () => {
-      if (finalAction?.type === 'maps') {
-        await Linking.openURL(finalAction.data.maps_url).catch(console.error);
-
-      } else if (finalAction?.type === 'send_message') {
-        if (finalAction.data.message_content.trim()) {
-          await handleSendMessage(finalAction.data.recipient_name,
-                                  finalAction.data.message_content);
-        }
-
+    /* 11 — Exécute l’action validée */
+    const runAction = async () => {
+      if (finalAction?.type === 'send_message') {
+        await handleSendMessage(finalAction.data.recipient_name,
+                                finalAction.data.message_content);
       } else if (finalAction?.type === 'make_call') {
         await handleCallContact(finalAction.data.recipient_name);
-      }
-      else if (finalAction?.type === 'open_camera') {
+      } else if (finalAction?.type === 'open_camera') {
         await handleOpenCamera();
       }
-
       setIsProcessing(false);
     };
 
     if (soundLoaded) {
-      sound.setOnPlaybackStatusUpdate(async st => {
-        if ('isLoaded' in st && st.isLoaded && st.didJustFinish && !st.isLooping) {
+      sound.setOnPlaybackStatusUpdate(async s => {
+        if ('isLoaded' in s && s.isLoaded && s.didJustFinish) {
           await sound.unloadAsync().catch(console.warn);
-          await doAction();
+          await runAction();
         }
       });
     } else {
-      await doAction();
+      await runAction();
     }
 
-  } catch (err: any) {
-    console.error('stopRecording error:', err);
-    setError(`Erreur traitement vocal : ${err.message || 'Inconnue'}`);
-    addMessage({
-      id: Date.now().toString(), role: 'assistant',
-      content: `Une erreur est survenue : ${err.message || 'Inconnue'}.`,
+  } catch (e: any) {
+    console.error('stopRecording error:', e);
+    setError(`Erreur traitement vocal : ${e.message || 'Inconnue'}`);
+    addMessage({ id: Date.now().toString(), role: 'assistant',
+      content: `Une erreur est survenue : ${e.message || 'Inconnue'}.`,
       timestamp: Date.now(),
     });
     setIsProcessing(false);
   } finally {
-    if (mp3FilePathToDelete) {
-      FileSystem.deleteAsync(mp3FilePathToDelete, { idempotent: true }).catch(console.warn);
+    if (mp3FilePath) {
+      FileSystem.deleteAsync(mp3FilePath, { idempotent: true }).catch(console.warn);
     }
   }
 };
+
 
   
   

@@ -434,6 +434,7 @@ conversation = [
             "     Dès que l’utilisateur fournit le contenu du SMS :\n"
             "   • Appelle de nouveau **prepare_send_message** avec **les deux** champs "
             "     (nom + message_content). Ne demande pas de confirmation supplémentaire.\n"
+            "    Il faut qu'as ce moment tu aies le contenu du message avant de l'envoyer.\n"
             "      Ne réponds jamais “Je ne peux pas envoyer le message moi-même” ; laisse le front faire l’envoi.\n"
             "3. Après chaque appel de fonction, rédige la réponse finale en te basant sur les données renvoyées. \n"
             "Si tu as besoin de plusieurs appels de fonction, fais-les dans l'ordre et rédige la réponse finale après le dernier appel.\n"
