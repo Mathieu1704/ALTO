@@ -341,6 +341,10 @@ get_directions_function = {
 prepare_send_message_function = {
     "name": "prepare_send_message",
     "description": (
+        "Avant de préréparer l'envoi d'un SMS, "
+        "vérifie que l'utilisateur a un contact correspondant. "
+        "si il y a plusieurs contacts avec le même nom, "
+        "demande-lui de choisir lequel. "
         "Prépare l'envoi d'un SMS à un contact. "
         "Appelle-la dès que tu connais le destinataire, "
         "même si le texte du message est encore inconnu."
@@ -390,6 +394,7 @@ conversation = [
         )
     }
 ]
+
 
 # 💬 Dialogue principal
 
