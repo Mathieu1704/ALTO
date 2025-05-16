@@ -16,6 +16,7 @@ import * as Location from 'expo-location';
 import { useEffect, useRef, useState } from 'react';
 
 const API_URL = 'https://alto-api-83dp.onrender.com/process-voice';
+const TTS_ONLY_URL = 'https://alto-api-83dp.onrender.com/tts-only';
 
 export default function useVoiceRecognition() {
   const recordingRef = useRef<Audio.Recording | null>(null);
@@ -236,7 +237,7 @@ const handleSendMessage = async (
     let mp3FilePathToDelete: string | null = null;
   
     try {
-      // 1) Stop & unload
+      /* 1) STOP & UNLOAD ---------------------------------------------------- */
       const recording = recordingRef.current;
       if (!recording) return;
       await recording.stopAndUnloadAsync();
@@ -244,7 +245,7 @@ const handleSendMessage = async (
       setAudioLevel(0);
       setIsProcessing(true);
   
-      // 2) Récupère l’URI
+      /* 2) RÉCUPÈRE L’URI --------------------------------------------------- */
       const uri = recording.getURI();
       recordingRef.current = null;
       if (!uri) {
@@ -252,7 +253,7 @@ const handleSendMessage = async (
         return;
       }
   
-      // 3) Permissions localisation
+      /* 3) LOCALISATION ----------------------------------------------------- */
       const { status: locStatus } = await Location.requestForegroundPermissionsAsync();
       let latitude: number | null = null;
       let longitude: number | null = null;
@@ -271,7 +272,7 @@ const handleSendMessage = async (
         });
       }
   
-      // 4) Prépare & envoie l’audio
+      /* 4) ENVOI AU BACKEND ------------------------------------------------- */
       const formData = new FormData();
       const fileType = uri.endsWith('.wav') ? 'audio/wav' : 'audio/webm';
       formData.append('file', {
@@ -287,23 +288,36 @@ const handleSendMessage = async (
       const response = await axios.post(API_URL, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      const { transcript, response_text, audio: base64Audio, action } = response.data;
+      const { transcript, response_text, audio: backendAudio64, action } = response.data;
       const backendText = response_text || '[Réponse vide]';
   
-      // 5) Vérification du contact AVANT TTS
-      let playBackendTTS = true;
-      let finalAction = action;
-      let finalText = backendText;
+      /* 5) CONTACT & PERMISSION CHECK AVANT TTS ----------------------------- */
+      let finalText     = backendText;
+      let finalAction   = action;
+      let audioBase64   = backendAudio64;   // sera remplacé si finalText change
+  
+      // Helper : régénère un MP3 à partir de finalText et remplace audioBase64
+      const regenerateTTS = async () => {
+        try {
+          const ttsResp = await axios.post(
+            TTS_ONLY_URL,
+            new URLSearchParams({ text: finalText }).toString(),
+            { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+          );
+          audioBase64 = ttsResp.data.audio || '';
+        } catch (e) {
+          console.error('Erreur TTS local :', e);
+          audioBase64 = '';
+        }
+      };
   
       if (action?.type === 'send_message') {
         // 5a) permission contacts
         const { status: perm } = await Contacts.requestPermissionsAsync();
         if (perm !== 'granted') {
-          const msg = "Je ne peux pas envoyer de message sans l'accès à vos contacts. Veuillez accorder la permission.";
-          addMessage({ id: Date.now().toString(), role: 'assistant', content: msg, timestamp: Date.now() });
-          finalText = msg;
+          finalText   = "Je ne peux pas envoyer de message sans l'accès à vos contacts. Veuillez accorder la permission.";
           finalAction = null;
-          playBackendTTS = false;
+          await regenerateTTS();
         } else {
           // 5b) existence du contact
           const { data: contactsFound } = await Contacts.getContactsAsync({
@@ -311,22 +325,20 @@ const handleSendMessage = async (
             fields: [Contacts.Fields.PhoneNumbers],
           });
           if (!contactsFound || contactsFound.length === 0) {
-            const msg = `Je n'ai pas trouvé de contact nommé "${action.data.recipient_name}".`;
-            addMessage({ id: Date.now().toString(), role: 'assistant', content: msg, timestamp: Date.now() });
-            finalText = msg;
+            finalText   = `Je n'ai pas trouvé de contact nommé "${action.data.recipient_name}".`;
             finalAction = null;
-            playBackendTTS = false;
+            await regenerateTTS();
           }
         }
       }
   
-      // 6) Prépare la lecture du TTS renvoyé
-      const sound = new Audio.Sound();
-      let soundLoaded = false;
-      if (playBackendTTS && base64Audio) {
+      /* 6) LECTURE DU TTS --------------------------------------------------- */
+      const sound       = new Audio.Sound();
+      let soundLoaded   = false;
+      if (audioBase64) {
         const mp3Path = FileSystem.documentDirectory + 'response.mp3';
         mp3FilePathToDelete = mp3Path;
-        await FileSystem.writeAsStringAsync(mp3Path, base64Audio, {
+        await FileSystem.writeAsStringAsync(mp3Path, audioBase64, {
           encoding: FileSystem.EncodingType.Base64,
         });
   
@@ -345,42 +357,49 @@ const handleSendMessage = async (
           await sound.playAsync();
           soundLoaded = true;
         } catch (err) {
-          console.error('Erreur lecture TTS:', err);
+          console.error('Erreur lecture TTS :', err);
           addMessage({
             id: Date.now().toString(),
             role: 'assistant',
             content: "Désolé, je n'ai pas pu lire ma réponse vocale.",
             timestamp: Date.now(),
           });
-          // Si maps, on l’ouvre
-          if (finalAction?.type === 'maps') {
-            Linking.openURL(finalAction.data.maps_url).catch(console.error);
-          }
-          setIsProcessing(false);
-          return;
         }
+      } else {
+        console.warn('Aucun MP3 disponible ; la réponse sera affichée sans voix.');
       }
   
-      // 7) Affiche les messages (user + assistant) si on sauvegarde
+      /* 7) LOGS DANS L’INTERFACE ------------------------------------------- */
       if (saveTranscripts) {
         const now = Date.now();
-        addMessage({ id: now.toString(), role: 'user', content: transcript?.trim() || '[Message audio]', timestamp: now });
-        if (playBackendTTS) {
-          addMessage({ id: (now + 1).toString(), role: 'assistant', content: finalText.trim(), timestamp: now + 1 });
-        }
+        addMessage({
+          id: now.toString(),
+          role: 'user',
+          content: transcript?.trim() || '[Message audio]',
+          timestamp: now,
+        });
+        addMessage({
+          id: (now + 1).toString(),
+          role: 'assistant',
+          content: finalText.trim(),
+          timestamp: now + 1,
+        });
       }
   
-      // 8) Action post-TTS
+      /* 8) ACTION APRÈS LE TTS --------------------------------------------- */
       const doAction = async () => {
         if (finalAction?.type === 'maps') {
           await Linking.openURL(finalAction.data.maps_url).catch(console.error);
         } else if (finalAction?.type === 'send_message') {
-          await handleSendMessage(finalAction.data.recipient_name, finalAction.data.message_content);
+          await handleSendMessage(
+            finalAction.data.recipient_name,
+            finalAction.data.message_content
+          );
         }
         setIsProcessing(false);
       };
   
-      // 9) Déclenche après la fin de la lecture ou directement si on skippe
+      /* 9) DÉCLENCHEMENT APRÈS LECTURE ------------------------------------- */
       if (soundLoaded) {
         sound.setOnPlaybackStatusUpdate(async status => {
           if ('isLoaded' in status && status.isLoaded && status.didJustFinish && !status.isLooping) {
@@ -389,7 +408,7 @@ const handleSendMessage = async (
           }
         });
       } else {
-        // on skippe le TTS ou pas d’audio → on fait l’action
+        // Pas de son ou déjà fini → on exécute l’action
         await doAction();
       }
   

@@ -341,24 +341,30 @@ get_directions_function = {
 prepare_send_message_function = {
     "name": "prepare_send_message",
     "description": (
-        "Prépare l'envoi d'un SMS à un contact. Renvoie simplement "
-        "recipient_name et message_content pour que le front lance l'envoi."
+        "Prépare l'envoi d'un SMS à un contact. "
+        "Appelle-la dès que tu connais le destinataire, "
+        "même si le texte du message est encore inconnu."
     ),
     "parameters": {
         "type": "object",
         "properties": {
             "recipient_name": {
                 "type": "string",
-                "description": "Nom du destinataire (ex: Maman, Jean Dupont)"
+                "description": "Nom ou surnom du destinataire (ex: Maman, Didier)"
             },
             "message_content": {
                 "type": "string",
-                "description": "Contenu du message à envoyer"
+                "description": (
+                    "Contenu du message. "
+                    "Si l'utilisateur ne l'a pas encore donné, passe simplement une chaîne vide."
+                ),
+                "default": ""          # ✅ <-- la clé qui manquait
             }
         },
-        "required": ["recipient_name"]
+        "required": ["recipient_name"]  # message_content n'est plus requis
     }
 }
+
 
 
 
@@ -367,20 +373,22 @@ conversation = [
     {
         "role": "system",
         "content": (
-            "Tu es Alto, un assistant vocal local et autonome. "
-            "Ta mission est de faciliter la vie de l'utilisateur, "
-            "en particulier les personnes peu familières avec le numérique "
-            "(seniors, débutants…). "
-            "Tu expliques toujours de façon claire, patiente et sans jargon technique. "
-            "Tu peux :\n"
-            "- Transcrire et comprendre la voix de l'utilisateur.\n"
-            "- Rechercher sur le web, donner la météo, gérer son agenda Google.\n"
-            "- Ouvrir un itinéraire sur Google Maps.\n"
-            "- Préparer l'envoi de SMS via l'application du téléphone.\n"
-            "Lorsque tu appelles une fonction (via Function Calling), "
-            "laisses GPT formuler la réponse finale avec les données renvoyées "
-            "par la fonction. Si l'utilisateur demande un SMS sans préciser le destinataire "
-            "ou le contenu, demande-lui ces informations."
+            """Tu es **Alto**, un assistant vocal local et autonome.
+Ta mission est de faciliter la vie de l'utilisateur, en particulier des personnes peu familières avec le numérique (seniors, débutants…).  
+Tu expliques toujours de façon claire, patiente et sans jargon technique.
+
+**Capacités principales :**
+- Transcrire et comprendre la voix de l'utilisateur ;
+- Rechercher des informations sur le web ;
+- Fournir la météo ;
+- Gérer l'agenda Google de l'utilisateur ;
+- Ouvrir un itinéraire sur Google Maps ;
+- Préparer l'envoi de SMS via l'application du téléphone.
+
+**Règles de *function calling* :**
+1. Après l'appel d'une fonction, laisse GPT formuler la réponse finale en se basant sur les données retournées.  
+2. Si l'utilisateur demande d'envoyer un message à un contact, appelle immédiatement la fonction **prepare_send_message** dès que tu connais le nom du destinataire, même lorsque le texte du SMS n'est pas encore connu (utilise `message_content = ""`).  
+3. Ne pose la question sur le contenu du SMS que si le contact existe réellement."""
         )
     }
 ]
