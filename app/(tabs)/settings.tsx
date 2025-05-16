@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons'; // ✅ Ionicons importé
 import Colors from '@/constants/colors';
 import { useChatStore } from '@/store/chat-store';
 import { useSettingsStore } from '@/store/settings-store';
+import { useRouter } from 'expo-router';
 
 export default function SettingsScreen() {
   const { clearMessages } = useChatStore();
@@ -24,6 +25,7 @@ export default function SettingsScreen() {
   } = useSettingsStore();
 
   const theme = isDarkTheme ? Colors.dark : Colors.light;
+  const router = useRouter();
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.background }]}>
@@ -112,6 +114,20 @@ export default function SettingsScreen() {
           </View>
         </View>
       </View>
+      <View style={[styles.section, { borderBottomColor: theme.border }]}>
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>Abonnement</Text>
+        <TouchableOpacity
+          style={[styles.settingItem, styles.upgradeButton, { backgroundColor: theme.primary }]}
+          onPress={() => {
+            // Navigue vers un nouvel écran (à créer) ou ouvre une modale
+            router.push('/upgrade');
+            console.log("Bouton Upgrade pressé");
+          }}
+        >
+          <Ionicons name="rocket-outline" size={20} color="#fff" style={{ marginRight: 10 }} />
+          <Text style={{ color: '#fff', fontWeight: 'bold' }}>Passer à une version supérieure</Text>
+        </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 }
@@ -171,5 +187,13 @@ const styles = StyleSheet.create({
   appDescription: {
     fontSize: 14,
     lineHeight: 20,
+  },
+  upgradeButton: {
+  marginTop: 10,
+  padding: 15,
+  borderRadius: 10,
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'center',
   },
 });
