@@ -541,6 +541,17 @@ async def ask_gpt(prompt: str, lat: float = None, lng: float = None) -> dict:
                 "type": "send_message",
                 "data": result
             }
+        elif name == "prepare_call_contact":
+            response_data["action"] = {
+                "type": "make_call",  
+                "data": result
+            }
+        elif name == "prepare_open_camera":
+            response_data["action"] = {
+                "type": "open_camera",
+                "data": result
+            }
+        
 
         conversation.append({"role": "assistant", "content": answer})
 

@@ -436,7 +436,11 @@ const stopRecording = async () => {
       const sms  = (action.data.message_content || '').trim();
 
       /* si le texte est vide on annule l’action immédiatement */
-      if (!sms) finalAction = null;
+      if (!sms) {
+        finalText   = '';       // rien à dire
+        audio64     = '';       // donc rien à jouer
+        finalAction = null;     // et surtout rien à exécuter
+      }
 
       /* permission contacts */
       const { status: perm } = await Contacts.requestPermissionsAsync();
