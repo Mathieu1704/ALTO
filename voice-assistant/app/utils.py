@@ -356,7 +356,7 @@ prepare_send_message_function = {
                 "description": "Contenu du message à envoyer"
             }
         },
-        "required": ["recipient_name", "message_content"]
+        "required": ["recipient_name"]
     }
 }
 

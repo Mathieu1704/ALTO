@@ -1,9 +1,9 @@
 // Ajoutez cette ligne en haut de votre fichier si ce n'est pas déjà fait (pour TypeScript)
-// /// <reference types="expo-av" /> 
+// /// <reference types="expo-av" />
 // /// <reference types="expo-location" />
 // /// <reference types="expo-file-system" />
 // /// <reference types="expo-linking" />
-// /// <reference types="expo-contacts" /> 
+// /// <reference types="expo-contacts" />
 
 import { useChatStore } from '@/store/chat-store';
 import { useSettingsStore } from '@/store/settings-store';
@@ -69,39 +69,37 @@ const handleSendMessage = async (
   messageContent: string
 ) => {
   try {
-    // 1) Permissions
+    // La vérification de permission contact est déjà faite avant d'appeler handleSendMessage
+    // si l'action vient de stopRecording. Mais on la garde ici pour un usage direct potentiel.
     const { status } = await Contacts.requestPermissionsAsync();
     if (status !== 'granted') {
       setError("Permission d'accès aux contacts refusée.");
       addMessage({
         id: Date.now().toString(),
         role: 'assistant',
-        content:
-          "Je ne peux pas envoyer de message sans l'accès à vos contacts. " +
-          "Veuillez accorder la permission dans les réglages de votre téléphone.",
+        content: "Je ne peux pas envoyer de message sans l'accès à vos contacts. Veuillez accorder la permission dans les réglages de votre téléphone.",
         timestamp: Date.now(),
       });
       return;
     }
 
-    // 2) Recherche des contacts
     const { data: contactsFound } = await Contacts.getContactsAsync({
       name: recipientName,
       fields: [Contacts.Fields.PhoneNumbers],
     });
 
     if (!contactsFound || contactsFound.length === 0) {
-      console.warn(`Aucun contact trouvé pour "${recipientName}"`);
+      // Ce cas devrait être intercepté plus tôt dans stopRecording,
+      // mais on le garde comme double sécurité ou si handleSendMessage est appelé autrement.
       addMessage({
         id: Date.now().toString(),
         role: 'assistant',
-        content: `Je n'ai pas trouvé de contact nommé "${recipientName}". Pouvez-vous reformuler ou préciser le nom ?`,
+        content: `Je n'ai pas trouvé de contact nommé "${recipientName}".`,
         timestamp: Date.now(),
       });
       return;
     }
 
-    // 3) Si plusieurs contacts, demander confirmation
     if (contactsFound.length > 1) {
       const namesList = contactsFound.map(c => c.name).join('", "');
       addMessage({
@@ -110,13 +108,11 @@ const handleSendMessage = async (
         content: `J'ai trouvé plusieurs contacts nommés "${recipientName}" : "${namesList}". Lequel voulez-vous ?`,
         timestamp: Date.now(),
       });
-      return; // On attend la réponse de l'utilisateur
+      return;
     }
 
-    // 4) Un seul contact trouvé : on continue
     const contact = contactsFound[0];
-    if (!contact.phoneNumbers || contact.phoneNumbers.length === 0) {
-      console.warn(`Le contact "${contact.name}" n'a pas de numéro de téléphone.`);
+    if (!contact.phoneNumbers?.length) {
       addMessage({
         id: Date.now().toString(),
         role: 'assistant',
@@ -126,12 +122,9 @@ const handleSendMessage = async (
       return;
     }
 
-    // 5) Extraction du numéro
-    let phoneNumber =
-      contact.phoneNumbers.find(p => p.label === 'mobile')?.number ||
-      contact.phoneNumbers[0].number;
+    let phoneNumber = contact.phoneNumbers.find(p => p.label === 'mobile')?.number
+      || contact.phoneNumbers[0].number;
     if (!phoneNumber) {
-      console.warn(`Impossible d'extraire un numéro pour "${contact.name}"`);
       addMessage({
         id: Date.now().toString(),
         role: 'assistant',
@@ -141,29 +134,23 @@ const handleSendMessage = async (
       return;
     }
 
-    // 6) Construction et envoi du SMS
-    const cleanedPhoneNumber = phoneNumber.replace(/\s+/g, '');
-    const smsUrl = `sms:${cleanedPhoneNumber}?body=${encodeURIComponent(
-      messageContent
-    )}`;
-    console.log('Ouverture de l\'URL SMS :', smsUrl);
-
+    const cleaned = phoneNumber.replace(/\s+/g, '');
+    const smsUrl = `sms:${cleaned}?body=${encodeURIComponent(messageContent)}`;
     const supported = await Linking.canOpenURL(smsUrl);
     if (supported) {
       await Linking.openURL(smsUrl);
+      // Optionnel : ajouter un message de confirmation que l'app SMS a été ouverte
+      // addMessage({ role: 'assistant', content: 'Ouverture de votre application SMS...' });
     } else {
-      console.error('Impossible d\'ouvrir l\'application SMS via le lien.', smsUrl);
       addMessage({
         id: Date.now().toString(),
         role: 'assistant',
-        content:
-          "Je n'ai pas réussi à ouvrir votre application de messagerie. " +
-          "Vérifiez qu'une application SMS soit configurée.",
+        content: "Je n'ai pas réussi à ouvrir votre application de messagerie. Vérifiez qu'une application SMS soit configurée.",
         timestamp: Date.now(),
       });
     }
   } catch (e: any) {
-    console.error("Erreur lors de la préparation de l'envoi du message:", e);
+    console.error('Erreur préparation envoi SMS:', e);
     addMessage({
       id: Date.now().toString(),
       role: 'assistant',
@@ -249,15 +236,15 @@ const handleSendMessage = async (
     let mp3FilePathToDelete: string | null = null;
   
     try {
+      // 1) Stop & unload
       const recording = recordingRef.current;
       if (!recording) return;
-  
-      // Stop & unload recording
       await recording.stopAndUnloadAsync();
       setIsRecording(false);
       setAudioLevel(0);
       setIsProcessing(true);
   
+      // 2) Récupère l’URI
       const uri = recording.getURI();
       recordingRef.current = null;
       if (!uri) {
@@ -265,11 +252,11 @@ const handleSendMessage = async (
         return;
       }
   
-      // Permissions localisation
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      // 3) Permissions localisation
+      const { status: locStatus } = await Location.requestForegroundPermissionsAsync();
       let latitude: number | null = null;
       let longitude: number | null = null;
-      if (status === 'granted') {
+      if (locStatus === 'granted') {
         const loc = await Location.getCurrentPositionAsync({});
         latitude = loc.coords.latitude;
         longitude = loc.coords.longitude;
@@ -284,7 +271,7 @@ const handleSendMessage = async (
         });
       }
   
-      // Préparation FormData
+      // 4) Prépare & envoie l’audio
       const formData = new FormData();
       const fileType = uri.endsWith('.wav') ? 'audio/wav' : 'audio/webm';
       formData.append('file', {
@@ -297,123 +284,136 @@ const handleSendMessage = async (
         formData.append('lng', longitude.toString());
       }
   
-      // Envoi au backend
       const response = await axios.post(API_URL, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       const { transcript, response_text, audio: base64Audio, action } = response.data;
-      const assistantTextToUse = response_text || '[Réponse vide]';
+      const backendText = response_text || '[Réponse vide]';
   
-      // Vérification contact avant SMS
-      let finalText = assistantTextToUse;
+      // 5) Vérification du contact AVANT TTS
+      let playBackendTTS = true;
       let finalAction = action;
+      let finalText = backendText;
+  
       if (action?.type === 'send_message') {
-        const { data: contactsFound } = await Contacts.getContactsAsync({
-          name: action.data.recipient_name,
-          fields: [Contacts.Fields.PhoneNumbers],
-        });
-        if (!contactsFound || contactsFound.length === 0) {
-          finalText = `Je n'ai pas trouvé de contact nommé "${action.data.recipient_name}".`;
+        // 5a) permission contacts
+        const { status: perm } = await Contacts.requestPermissionsAsync();
+        if (perm !== 'granted') {
+          const msg = "Je ne peux pas envoyer de message sans l'accès à vos contacts. Veuillez accorder la permission.";
+          addMessage({ id: Date.now().toString(), role: 'assistant', content: msg, timestamp: Date.now() });
+          finalText = msg;
           finalAction = null;
+          playBackendTTS = false;
+        } else {
+          // 5b) existence du contact
+          const { data: contactsFound } = await Contacts.getContactsAsync({
+            name: action.data.recipient_name,
+            fields: [Contacts.Fields.PhoneNumbers],
+          });
+          if (!contactsFound || contactsFound.length === 0) {
+            const msg = `Je n'ai pas trouvé de contact nommé "${action.data.recipient_name}".`;
+            addMessage({ id: Date.now().toString(), role: 'assistant', content: msg, timestamp: Date.now() });
+            finalText = msg;
+            finalAction = null;
+            playBackendTTS = false;
+          }
+        }
+      }
+  
+      // 6) Prépare la lecture du TTS renvoyé
+      const sound = new Audio.Sound();
+      let soundLoaded = false;
+      if (playBackendTTS && base64Audio) {
+        const mp3Path = FileSystem.documentDirectory + 'response.mp3';
+        mp3FilePathToDelete = mp3Path;
+        await FileSystem.writeAsStringAsync(mp3Path, base64Audio, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+  
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+          interruptionModeIOS: InterruptionModeIOS.DuckOthers,
+          staysActiveInBackground: false,
+          interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
+          shouldDuckAndroid: false,
+          playThroughEarpieceAndroid: false,
+        });
+  
+        try {
+          await sound.loadAsync({ uri: mp3Path });
+          await sound.playAsync();
+          soundLoaded = true;
+        } catch (err) {
+          console.error('Erreur lecture TTS:', err);
           addMessage({
             id: Date.now().toString(),
             role: 'assistant',
-            content: finalText,
+            content: "Désolé, je n'ai pas pu lire ma réponse vocale.",
             timestamp: Date.now(),
           });
-        }
-      }
-  
-      // Écriture du MP3 TTS
-      const mp3Path = FileSystem.documentDirectory + 'response.mp3';
-      mp3FilePathToDelete = mp3Path;
-      await FileSystem.writeAsStringAsync(mp3Path, base64Audio, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-  
-      // Forcer haut-parleur
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        playsInSilentModeIOS: true,
-        interruptionModeIOS: InterruptionModeIOS.DuckOthers,
-        staysActiveInBackground: false,
-        interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
-        shouldDuckAndroid: false,
-        playThroughEarpieceAndroid: false,
-      });
-  
-      // Lecture du TTS
-      const sound = new Audio.Sound();
-      let soundPlayedSuccessfully = false;
-      try {
-        await sound.loadAsync({ uri: mp3Path });
-        await sound.playAsync();
-        soundPlayedSuccessfully = true;
-      } catch (playError) {
-        console.error('Erreur lecture TTS:', playError);
-        addMessage({
-          id: Date.now().toString(),
-          role: 'assistant',
-          content: "Désolé, je n'ai pas pu lire ma réponse vocale.",
-          timestamp: Date.now(),
-        });
-        // Si action maps
-        if (action?.type === 'maps' && action.data.maps_url) {
-          Linking.openURL(action.data.maps_url).catch(console.error);
-        }
-        setIsProcessing(false);
-        return;
-      }
-  
-      // Sauvegarde des transcripts
-      if (saveTranscripts) {
-        const now = Date.now();
-        addMessage({
-          id: now.toString(),
-          role: 'user',
-          content: transcript?.trim() || '[Message audio]',
-          timestamp: now,
-        });
-        addMessage({
-          id: (now + 1).toString(),
-          role: 'assistant',
-          content: finalText.trim(),
-          timestamp: now + 1,
-        });
-      }
-  
-      // Callback fin de lecture
-      sound.setOnPlaybackStatusUpdate(async (status) => {
-        if (!status.isLoaded) return;
-        if (status.didJustFinish && !status.isLooping) {
-          await sound.unloadAsync().catch(console.warn);
-  
+          // Si maps, on l’ouvre
           if (finalAction?.type === 'maps') {
-            await Linking.openURL(finalAction.data.maps_url).catch(console.error);
-          } else if (finalAction?.type === 'send_message') {
-            await handleSendMessage(
-              finalAction.data.recipient_name,
-              finalAction.data.message_content
-            );
+            Linking.openURL(finalAction.data.maps_url).catch(console.error);
           }
           setIsProcessing(false);
+          return;
         }
-      });
+      }
+  
+      // 7) Affiche les messages (user + assistant) si on sauvegarde
+      if (saveTranscripts) {
+        const now = Date.now();
+        addMessage({ id: now.toString(), role: 'user', content: transcript?.trim() || '[Message audio]', timestamp: now });
+        if (playBackendTTS) {
+          addMessage({ id: (now + 1).toString(), role: 'assistant', content: finalText.trim(), timestamp: now + 1 });
+        }
+      }
+  
+      // 8) Action post-TTS
+      const doAction = async () => {
+        if (finalAction?.type === 'maps') {
+          await Linking.openURL(finalAction.data.maps_url).catch(console.error);
+        } else if (finalAction?.type === 'send_message') {
+          await handleSendMessage(finalAction.data.recipient_name, finalAction.data.message_content);
+        }
+        setIsProcessing(false);
+      };
+  
+      // 9) Déclenche après la fin de la lecture ou directement si on skippe
+      if (soundLoaded) {
+        sound.setOnPlaybackStatusUpdate(async status => {
+          if ('isLoaded' in status && status.isLoaded && status.didJustFinish && !status.isLooping) {
+            await sound.unloadAsync().catch(console.warn);
+            await doAction();
+          }
+        });
+      } else {
+        // on skippe le TTS ou pas d’audio → on fait l’action
+        await doAction();
+      }
+  
     } catch (err: any) {
       console.error('stopRecording error:', err);
       setError(`Erreur traitement vocal: ${err.message || 'Inconnue'}`);
+      addMessage({
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: `Une erreur est survenue: ${err.message || 'Inconnue'}.`,
+        timestamp: Date.now(),
+      });
       setIsProcessing(false);
     } finally {
       if (mp3FilePathToDelete) {
-        FileSystem.deleteAsync(mp3FilePathToDelete, { idempotent: true }).catch(
-          console.warn
-        );
+        FileSystem.deleteAsync(mp3FilePathToDelete, { idempotent: true }).catch(console.warn);
       }
     }
   };
   
   
-  
+
+
+
   const toggleRecording = async () => {
     // Votre logique toggleRecording d'origine
     if (recordingRef.current) {
