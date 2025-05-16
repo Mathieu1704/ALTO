@@ -1,29 +1,34 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import Colors from '@/constants/colors';
+import { useSettingsStore } from '@/store/settings-store';
 
 export default function UpgradeScreen() {
+  const { isDarkTheme } = useSettingsStore();
+  const theme = isDarkTheme ? Colors.dark : Colors.light;
+
   return (
-    <ScrollView style={styles.container}>
-      <Text style={styles.title}>Choisissez une offre</Text>
+    <ScrollView style={[styles.container, { backgroundColor: theme.background }]}>
+      <Text style={[styles.title, { color: theme.text }]}>Choisissez une offre</Text>
 
-      <TouchableOpacity style={styles.card}>
-        <Text style={styles.planTitle}>Premium</Text>
-        <Text>10 €/mois – Plus d’options et confort</Text>
+      <TouchableOpacity style={[styles.card, { backgroundColor: theme.card }]}>
+        <Text style={[styles.planTitle, { color: theme.text }]}>Premium</Text>
+        <Text style={{ color: theme.subtext }}>10 €/mois – Assistance plus élaborée et 400 interactions par mois</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.card}>
-        <Text style={styles.planTitle}>Unlimited</Text>
-        <Text>25 €/mois – Illimité et prioritaire</Text>
+      <TouchableOpacity style={[styles.card, { backgroundColor: theme.card }]}>
+        <Text style={[styles.planTitle, { color: theme.text }]}>Unlimited</Text>
+        <Text style={{ color: theme.subtext }}>25 €/mois – Nombre d'interactions illimité et 3 appels à l'assistance téléphonique par mois</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.card}>
-        <Text style={styles.planTitle}>25 interactions</Text>
-        <Text>1 € – Recharge ponctuelle</Text>
+      <TouchableOpacity style={[styles.card, { backgroundColor: theme.card }]}>
+        <Text style={[styles.planTitle, { color: theme.text }]}>25 interactions</Text>
+        <Text style={{ color: theme.subtext }}>1 € – Recharge ponctuelle</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.card}>
-        <Text style={styles.planTitle}>1 appel</Text>
-        <Text>2 € – Assistance par téléphone</Text>
+      <TouchableOpacity style={[styles.card, { backgroundColor: theme.card }]}>
+        <Text style={[styles.planTitle, { color: theme.text }]}>1 appel</Text>
+        <Text style={{ color: theme.subtext }}>2 € – Assistance téléphonique</Text>
       </TouchableOpacity>
     </ScrollView>
   );
