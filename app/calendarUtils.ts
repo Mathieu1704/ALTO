@@ -2,6 +2,8 @@
 import { parse } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import * as Calendar from 'expo-calendar';
+import * as IntentLauncher from 'expo-intent-launcher'; // MODIF: import pour lancer l’UI native Android
+import { Linking, Platform } from 'react-native'; // MODIF: import pour deep-link iOS
 
 /*--------------------------------------------------------------*/
 /* 1. Convertit période OU date précise → plage de dates         */
@@ -145,4 +147,50 @@ export async function getEventsForPeriod(period: string): Promise<string> {
   });
 
   return `Voici tes événements ${period} :\n${lines.join('\n')}`;
+}
+
+/*--------------------------------------------------------------*/
+/* MODIF: Ajout de la logique pour ouvrir l’UI native du calendrier */
+/*--------------------------------------------------------------*/
+
+/**
+ * Lance l'UI de création d'événement dans le calendrier natif.
+ */
+export function launchNativeCalendarEvent(
+  title: string,
+  start: Date,
+  end: Date
+): void {
+  if (Platform.OS === 'android') {
+    IntentLauncher.startActivityAsync(
+      'android.intent.action.INSERT',            // MODIF: remplacer IntentLauncher.ACTION_INSERT
+      {
+        data: 'content://com.android.calendar/events',
+        extra: {                                // MODIF: c'est `extra` (singulier), pas `extras`
+          title,
+          beginTime: start.getTime(),
+          endTime:   end.getTime(),
+          allDay:    false,
+        },
+      }
+    );
+  } else if (Platform.OS === 'ios') {
+    const ts = Math.floor(start.getTime() / 1000);
+    Linking.openURL(`calshow:${ts}`);
+  } else {
+    console.warn('Calendrier natif non pris en charge sur cette plateforme');
+  }
+}
+
+/**
+ * À appeler depuis le front quand GPT déclenche la function_call "open_native_calendar".
+ */
+export function scheduleAppointmentViaNativeUI(
+  summary: string,
+  isoStart:   string,
+  durationMinutes: number = 60
+): void {
+  const start = new Date(isoStart);
+  const end   = new Date(start.getTime() + durationMinutes * 60000);
+  launchNativeCalendarEvent(summary, start, end);
 }

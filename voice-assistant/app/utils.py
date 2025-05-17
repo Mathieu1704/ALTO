@@ -223,12 +223,16 @@ async def prepare_open_camera() -> dict:
     return {}          # rien à renvoyer, le front sait quoi faire
 
 # 📱 Ouvrir une application
-async def prepare_open_app(app_name: str) -> dict:
+async def prepare_open_app(app_name: str, params: dict | None = None) -> dict:  # MODIF: ajout de params
     """
     Prépare l’ouverture d’une application installée sur le téléphone.
-    L’argument app_name est un nom “humain” (YouTube, WhatsApp…).
+    app_name est un nom “humain” (YouTube, WhatsApp…) ou 'calendar'.
+    params peut contenir des données supplémentaires (summary, start_time, duration_minutes).
     """
-    return {"app_name": app_name}
+    payload = {"app_name": app_name}
+    if params is not None:
+        payload["params"] = params
+    return payload
 
 # 📅 Lire le calendrier natif
 async def read_local_calendar(period: str) -> dict:
@@ -460,6 +464,19 @@ read_local_calendar_function = {
     }
 }
 
+open_native_calendar_function = {  # MODIF: nouvelle définition
+    "name": "open_native_calendar",
+    "description": "Ouvre l'UI du calendrier natif pour créer un événement.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "summary":          {"type": "string", "description": "Titre de l'événement"},
+            "start_time":       {"type": "string", "description": "Date et heure de début ISO"},
+            "duration_minutes": {"type": "integer", "description": "Durée en minutes", "default": 60}
+        },
+        "required": ["summary", "start_time"]
+    }
+}
 
 
 
@@ -527,7 +544,8 @@ async def ask_gpt(prompt: str, lat: float = None, lng: float = None) -> dict:
         prepare_call_contact_function,
         prepare_open_camera_function,
         open_app_function,
-        read_local_calendar_function
+        read_local_calendar_function,
+        open_native_calendar_function
     ]
 
     first = await client.chat.completions.create(
@@ -556,7 +574,14 @@ async def ask_gpt(prompt: str, lat: float = None, lng: float = None) -> dict:
             "prepare_call_contact": prepare_call_contact,
             "prepare_open_camera": prepare_open_camera,
             "prepare_open_app": prepare_open_app,
-            "read_local_calendar": read_local_calendar
+            "read_local_calendar": read_local_calendar,
+            "open_native_calendar":  # MODIF: mapping de la nouvelle fonction
+                lambda **kw: prepare_open_app(
+                    "calendar",
+                    {"summary": kw["summary"],
+                     "start_time": kw["start_time"],
+                     "duration_minutes": kw.get("duration_minutes", 60)}
+                )
         }
 
         # Exécution de la fonction
