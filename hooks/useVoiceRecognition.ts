@@ -5,7 +5,6 @@
 // /// <reference types="expo-linking" />
 // /// <reference types="expo-contacts" />
 
-import { getEventsForPeriod } from '@/app/calendarUtils';
 import { useChatStore } from '@/store/chat-store';
 import { useSettingsStore } from '@/store/settings-store';
 import axios from 'axios';
@@ -18,6 +17,7 @@ import * as Linking from 'expo-linking';
 import * as Location from 'expo-location';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Platform, ToastAndroid } from 'react-native';
+import { getEventsForPeriod } from '../utils/calendarUtils';
 
 type AppInfo = {
   scheme:   string;        // URI interne
