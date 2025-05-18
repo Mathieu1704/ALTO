@@ -2,7 +2,8 @@ from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 import tempfile, os, base64
 
-from app.utils import transcribe_audio, ask_gpt, synthesize_speech
+from utils import transcribe_audio, ask_gpt, synthesize_speech  # MODIF: import direct du module utils
+
 
 app = FastAPI()
 
