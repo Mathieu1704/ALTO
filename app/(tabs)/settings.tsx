@@ -30,9 +30,9 @@ export default function SettingsScreen() {
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={[styles.section, { borderBottomColor: theme.border }]}>
-        <Text style={[styles.sectionTitle, { color: theme.text }]}>Appearance</Text>
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>Apparence</Text>
         <View style={styles.settingItem}>
-          <Text style={[styles.settingLabel, { color: theme.text }]}>Dark Theme</Text>
+          <Text style={[styles.settingLabel, { color: theme.text }]}>Thème sombre</Text>
           <Switch
             value={isDarkTheme}
             onValueChange={setIsDarkTheme}
@@ -45,7 +45,7 @@ export default function SettingsScreen() {
       <View style={[styles.section, { borderBottomColor: theme.border }]}>
         <Text style={[styles.sectionTitle, { color: theme.text }]}>Notifications</Text>
         <View style={styles.settingItem}>
-          <Text style={[styles.settingLabel, { color: theme.text }]}>Enable Notifications</Text>
+          <Text style={[styles.settingLabel, { color: theme.text }]}>Activer les notifications</Text>
           <Switch
             value={enableNotifications}
             onValueChange={setEnableNotifications}
@@ -58,7 +58,7 @@ export default function SettingsScreen() {
       <View style={[styles.section, { borderBottomColor: theme.border }]}>
         <Text style={[styles.sectionTitle, { color: theme.text }]}>Privacy</Text>
         <View style={styles.settingItem}>
-          <Text style={[styles.settingLabel, { color: theme.text }]}>Save Voice Transcripts</Text>
+          <Text style={[styles.settingLabel, { color: theme.text }]}>Sauver les Voice Transcripts</Text>
           <Switch
             value={saveTranscripts}
             onValueChange={setSaveTranscripts}
@@ -69,7 +69,7 @@ export default function SettingsScreen() {
       </View>
 
       <View style={[styles.section, { borderBottomColor: theme.border }]}>
-        <Text style={[styles.sectionTitle, { color: theme.text }]}>Data</Text>
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>Données</Text>
         <TouchableOpacity
           style={[
             styles.dangerButton,
@@ -88,13 +88,13 @@ export default function SettingsScreen() {
             style={styles.buttonIcon}
           />
           <Text style={[styles.dangerButtonText, { color: theme.text }]}>
-            Clear Conversation History
+            Effacer l'historique des conversations
           </Text>
         </TouchableOpacity>
       </View>
 
       <View style={[styles.section, { borderBottomColor: theme.border }]}>
-        <Text style={[styles.sectionTitle, { color: theme.text }]}>About</Text>
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>À propos</Text>
         <View style={styles.infoContainer}>
           <Ionicons
             name="information-circle-outline"
@@ -103,13 +103,12 @@ export default function SettingsScreen() {
             style={styles.infoIcon}
           />
           <View>
-            <Text style={[styles.appName, { color: theme.text }]}>VoixActive</Text>
+            <Text style={[styles.appName, { color: theme.text }]}>Alto</Text>
             <Text style={[styles.appVersion, { color: theme.subtext }]}>
               Version 1.0.0
             </Text>
             <Text style={[styles.appDescription, { color: theme.text }]}>
-              A voice-reactive chat application that visualizes your voice and
-              connects to AI for intelligent conversations.
+              Application d'assistance avec synthèse vocale en temps réel.
             </Text>
           </View>
         </View>
