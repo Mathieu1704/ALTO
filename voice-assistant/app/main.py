@@ -1,11 +1,105 @@
-from fastapi import FastAPI, UploadFile, File, Request, Form
+from fastapi import FastAPI, UploadFile, File, Request, Form, HTTPException
 from fastapi.responses import JSONResponse
 import tempfile
 import os
 import base64
 from app.utils import transcribe_audio, ask_gpt, synthesize_speech # Assurez-vous que ce chemin est correct
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import declarative_base, Mapped, mapped_column
+from sqlalchemy import String, Integer
+from pydantic import BaseModel
+from uuid import uuid4
+from dotenv import load_dotenv
+
+load_dotenv()
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+engine = create_async_engine(DATABASE_URL, echo=True)
+SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+Base = declarative_base()
+
+class User(Base):
+    __tablename__ = "users"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
+    email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String, nullable=False)
+    subscription: Mapped[str] = mapped_column(String, default="free")
+    requests_left: Mapped[int] = mapped_column(Integer, default=0)
+    calls_left: Mapped[int] = mapped_column(Integer, default=0)
 
 app = FastAPI()
+
+@app.on_event("startup")
+async def startup():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class UpgradeRequest(BaseModel):
+    user_id: str
+    upgrade_type: str
+
+@app.post("/register")
+async def register(req: RegisterRequest):
+    async with SessionLocal() as session:
+        user = User(email=req.email, password_hash=req.password)
+        session.add(user)
+        await session.commit()
+        return {"success": True, "user_id": user.id}
+
+@app.post("/login")
+async def login(req: LoginRequest):
+    async with SessionLocal() as session:
+        result = await session.execute(
+            f"SELECT * FROM users WHERE email = '{req.email}' AND password_hash = '{req.password}'"
+        )
+        user = result.fetchone()
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        return {"success": True, "user_id": user.id}
+
+@app.post("/upgrade")
+async def upgrade(req: UpgradeRequest):
+    async with SessionLocal() as session:
+        user = await session.get(User, req.user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        if req.upgrade_type == "premium":
+            user.subscription = "premium"
+            user.requests_left = 400
+            user.calls_left = 0
+        elif req.upgrade_type == "unlimited":
+            user.subscription = "unlimited"
+            user.requests_left = -1
+            user.calls_left = 3
+        elif req.upgrade_type == "25_interactions":
+            user.requests_left += 25
+        elif req.upgrade_type == "1_call":
+            user.calls_left += 1
+        else:
+            raise HTTPException(status_code=400, detail="Invalid upgrade type")
+        await session.commit()
+        return {"success": True}
+
+@app.get("/user/{user_id}")
+async def get_user(user_id: str):
+    async with SessionLocal() as session:
+        user = await session.get(User, user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        return {
+            "email": user.email,
+            "subscription": user.subscription,
+            "requests_left": user.requests_left,
+            "calls_left": user.calls_left,
+        }
 
 @app.post("/process-voice")
 async def process_voice(

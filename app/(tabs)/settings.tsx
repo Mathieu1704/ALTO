@@ -12,6 +12,10 @@ import Colors from '@/constants/colors';
 import { useChatStore } from '@/store/chat-store';
 import { useSettingsStore } from '@/store/settings-store';
 import { useRouter } from 'expo-router';
+import { useUserStore } from '@/store/user-store';
+
+const { logout } = useUserStore();
+const router = useRouter();
 
 export default function SettingsScreen() {
   const { clearMessages } = useChatStore();
@@ -125,6 +129,19 @@ export default function SettingsScreen() {
         >
           <Ionicons name="rocket-outline" size={20} color="#fff" style={{ marginRight: 10 }} />
           <Text style={{ color: '#fff', fontWeight: 'bold' }}>Passer à une version supérieure</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={[styles.section, { borderBottomColor: theme.border }]}>
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>Déconnexion</Text>
+        <TouchableOpacity
+          style={[styles.settingItem, styles.upgradeButton, { backgroundColor: theme.primary }]}
+          onPress={() => {
+            // Navigue vers un nouvel écran (à créer) ou ouvre une modale
+            logout();
+            router.replace('./(auth)/login');
+          }}
+        >
+          <Text style={{ color: '#fff', fontWeight: 'bold' }}>Se déconnecter</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
