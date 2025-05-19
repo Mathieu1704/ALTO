@@ -656,7 +656,7 @@ async def synthesize_speech(text: str) -> str:
     """
     resp = await client.audio.speech.create(
         model="tts-1",
-        voice="ash",
+        voice="ballad",
         input=text
     )
     # Création d'un fichier temporaire .mp3
