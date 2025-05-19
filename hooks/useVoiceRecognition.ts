@@ -19,6 +19,7 @@ import * as Location from 'expo-location';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Platform, ToastAndroid } from 'react-native';
 
+
 type AppInfo = {
   scheme:   string;        // URI interne
   storeUrl: string;        // App Store / Play Store
@@ -392,24 +393,59 @@ const handleSendMessage = async (
   };
 
   // Fonction pour lire le calendrier
-  const handleReadCalendar = async (period: string) => {
-    const spoken = await getEventsForPeriod(period);
-    // on fait parler Alto (TTS only) et on logge
+  // Dans useVoiceRecognition.ts
+/* ---------- lire le calendrier + TTS ------------------------ */
+const handleReadCalendar = async (period: string) => {
+  /* 1. Récupère les évènements natifs */
+  const spoken = await getEventsForPeriod(period);
+
+  /* 2. Appel /tts-only pour générer l’audio */
+  let audio64 = '';
+  try {
     const { data } = await axios.post(
       TTS_ONLY_URL,
-      new URLSearchParams({ text: spoken }),
-      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
+      new URLSearchParams({ text: spoken }).toString(),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     );
-    if (data.audio) {
-      // même logique de lecture que pour les autres réponses
-    }
-    addMessage({
-      id: Date.now().toString(),
-      role: 'assistant',
-      content: spoken,
-      timestamp: Date.now(),
+    audio64 = data.audio || '';
+  } catch (e) { console.error('TTS calendrier', e); }
+
+  /* 3. Lecture du MP3 en local */
+  if (audio64) {
+    const path = FileSystem.documentDirectory + 'calendar.mp3';
+    await FileSystem.writeAsStringAsync(path, audio64, {
+      encoding: FileSystem.EncodingType.Base64,
     });
-  };
+
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      playsInSilentModeIOS: true,
+      interruptionModeIOS: InterruptionModeIOS.DuckOthers,
+      interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
+    });
+
+    const snd = new Audio.Sound();
+    try {
+      await snd.loadAsync({ uri: path });
+      await snd.playAsync();
+      snd.setOnPlaybackStatusUpdate(async st => {
+        if ('didJustFinish' in st && st.didJustFinish) {
+          await snd.unloadAsync().catch(() => {});
+          await FileSystem.deleteAsync(path, { idempotent: true });
+        }
+      });
+    } catch (e) { console.error('Lecture MP3 calendrier', e); }
+  }
+
+  /* 4. Aussi dans le chat */
+  addMessage({
+    id: Date.now().toString(),
+    role: 'assistant',
+    content: spoken,
+    timestamp: Date.now(),
+  });
+};
+
   
 
 

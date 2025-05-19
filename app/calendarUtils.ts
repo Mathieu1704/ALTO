@@ -1,10 +1,8 @@
 // calendarUtils.ts
-import { parse } from 'date-fns';
-import { fr } from 'date-fns/locale';
 import * as Calendar from 'expo-calendar';
 
 /*--------------------------------------------------------------*/
-/* 1. Convertit période OU date précise → plage de dates         */
+/* 1. Convertit période OU date explicite → plage de dates       */
 /*--------------------------------------------------------------*/
 function getDateRangeFromPeriod(period: string): { start: Date; end: Date } {
   const now   = new Date();
@@ -15,7 +13,7 @@ function getDateRangeFromPeriod(period: string): { start: Date; end: Date } {
   const setFull = (d: Date, h: number, m = 0, s = 0, ms = 0) =>
     d.setHours(h, m, s, ms);
 
-  /* ---------- A. Date précise yyyy-mm-dd -------------------- */
+  /* ---------- A. yyyy-mm-dd (2025-05-20) --------------------- */
   const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(lc);
   if (iso) {
     const [_, y, m, d] = iso;
@@ -24,8 +22,8 @@ function getDateRangeFromPeriod(period: string): { start: Date; end: Date } {
     return { start: s, end: e };
   }
 
-  /* ---------- B. Date précise dd/mm/yyyy ou dd-mm-yyyy ------- */
-  const frNum = /^(\d{2})[\/\-](\d{2})[\/\-](\d{4})$/.exec(lc);
+  /* ---------- B. dd/mm/yyyy ou dd-mm-yyyy -------------------- */
+  const frNum = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/.exec(lc);
   if (frNum) {
     const [_, d, m, y] = frNum;
     const s = new Date(Number(y), Number(m) - 1, Number(d), 0, 0, 0, 0);
@@ -33,29 +31,35 @@ function getDateRangeFromPeriod(period: string): { start: Date; end: Date } {
     return { start: s, end: e };
   }
 
-  /* ---------- C. “20 mai 2025” ou “20 mai” ------------------- */
-  try {
-    const parsed = parse(lc, 'd MMM yyyy', new Date(), { locale: fr });
-    if (!isNaN(parsed.getTime())) {
-      const s = new Date(parsed.setHours(0, 0, 0, 0));
-      const e = new Date(parsed.setHours(23, 59, 59, 999));
-      return { start: s, end: e };
-    }
-  } catch { /* ignore parse errors */ }
+  /* ---------- C. "20 mai 2025" ou "20 mai" ------------------- */
+  const months = [
+    'janvier','février','mars','avril','mai','juin',
+    'juillet','août','septembre','octobre','novembre','décembre'
+  ];
 
-  try {
-    const parsedNoYear = parse(lc, 'd MMM', new Date(), { locale: fr });
-    if (!isNaN(parsedNoYear.getTime())) {
-      const year = parsedNoYear.getFullYear() === 1900
-        ? now.getFullYear()
-        : parsedNoYear.getFullYear();
-      parsedNoYear.setFullYear(year);
-      if (parsedNoYear < now) parsedNoYear.setFullYear(year + 1); // date déjà passée
-      const s = new Date(parsedNoYear.setHours(0, 0, 0, 0));
-      const e = new Date(parsedNoYear.setHours(23, 59, 59, 999));
+  const frFull = /^(\d{1,2})\s+([a-zéûîôàè]+)\s+(\d{4})$/.exec(lc);
+  if (frFull) {
+    const [_, d, monthName, y] = frFull;
+    const mIndex = months.indexOf(monthName);
+    if (mIndex !== -1) {
+      const s = new Date(Number(y), mIndex, Number(d), 0, 0, 0, 0);
+      const e = new Date(s); e.setHours(23, 59, 59, 999);
       return { start: s, end: e };
     }
-  } catch { /* ignore parse errors */ }
+  }
+
+  const frNoYear = /^(\d{1,2})\s+([a-zéûîôàè]+)$/.exec(lc);
+  if (frNoYear) {
+    const [_, d, monthName] = frNoYear;
+    const mIndex = months.indexOf(monthName);
+    if (mIndex !== -1) {
+      const s = new Date(now.getFullYear(), mIndex, Number(d), 0, 0, 0, 0);
+      const e = new Date(s); e.setHours(23, 59, 59, 999);
+      // si la date est déjà passée cette année, on décale à l’an prochain
+      if (e < now) { s.setFullYear(s.getFullYear() + 1); e.setFullYear(e.getFullYear() + 1); }
+      return { start: s, end: e };
+    }
+  }
 
   /* ---------- D. Périodes relatives -------------------------- */
   switch (lc) {
@@ -75,7 +79,8 @@ function getDateRangeFromPeriod(period: string): { start: Date; end: Date } {
 
     case 'cette semaine':
     case 'this week': {
-      const diffMon = (now.getDay() + 6) % 7; // 0 = lundi
+      // Lundi-dimanche
+      const diffMon = (now.getDay() + 6) % 7; // 0=lundi
       start.setDate(start.getDate() - diffMon);
       end.setDate(start.getDate() + 6);
       setFull(start, 0);
@@ -104,6 +109,7 @@ function getDateRangeFromPeriod(period: string): { start: Date; end: Date } {
     }
 
     default:
+      // Par défaut → aujourd’hui
       setFull(start, 0);
       setFull(end, 23, 59, 59, 999);
   }
