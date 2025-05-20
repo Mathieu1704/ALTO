@@ -503,6 +503,8 @@ conversation = [
             "   • Appelle immédiatement la fonction **get_directions** dès que tu connais la destination.\n"
             "   Si il te manque une donnée, comme le mode de transport, demande-la à l'utilisateur.\n"
             "   • NE DEMANDE PAS de confirmation avant d'ouvrir Google Maps.\n"
+            "9. Quand l'utilisateur veut savoir la météo :\n"
+            "   Il faut que tu dises explicitement degrés et pas °.\n"
         )
     }
 ]
