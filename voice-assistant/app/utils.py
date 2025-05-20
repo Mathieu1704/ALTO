@@ -499,6 +499,10 @@ conversation = [
             "   • Appelle immédiatement la fonction **prepare_open_app** dès que tu connais le NOM de l'application.\n"
             "7. Quand l'utilisateur veut connaitre son emploi du temps  :\n"
             "   • Appelle immédiatement la fonction **read_local_calendar** dès que tu connais la période .\n"
+            "8. Quand l'utilisateur veut aller à un endroit :\n"
+            "   • Appelle immédiatement la fonction **get_directions** dès que tu connais la destination.\n"
+            "   Si il te manque une donnée, comme le mode de transport, demande-la à l'utilisateur.\n"
+            "   • NE DEMANDE PAS de confirmation avant d'ouvrir Google Maps.\n"
         )
     }
 ]
