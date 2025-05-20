@@ -361,8 +361,8 @@ get_directions_function = {
             "mode": {
                 "type": "string",
                 "enum": ["walking", "driving", "transit"],
-                "description": "Mode de transport (défaut : walking)",
-                "default": "walking"
+                "description": "Mode de transport (défaut : driving)",
+                "default": "driving"
             }
         },
         "required": ["destination"]
@@ -586,6 +586,17 @@ async def ask_gpt(prompt: str, lat: float = None, lng: float = None) -> dict:
         )
         answer_msg = second.choices[0].message
         answer = answer_msg.content.strip()
+        # récupère la réponse brute
+        raw = answer_msg.content.strip()
+        answer = raw
+        if name == "get_directions":
+            import re
+            # supprime les liens markdown [texte](url)
+            answer = re.sub(r'\[.*?\]\(https?://[^\s)]+\)', '', answer)
+            # supprime les URL brutes
+            answer = re.sub(r'https?://[^\s]+', '', answer)
+            # nettoie les espaces multiples restants
+            answer = re.sub(r'\s{2,}', ' ', answer).strip()
         response_data["text_to_speak"] = answer
 
         # 7) Extraction de l’action
