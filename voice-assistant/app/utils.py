@@ -605,8 +605,7 @@ async def ask_gpt(prompt: str, lat: float = None, lng: float = None) -> dict:
             dest = result["end_address"]
 
             answer = (
-                f"L'itinéraire {mode_text} jusqu'à {dest} "
-                f"prend environ {dur} pour {dist}. "
+                f"L'itinéraire {mode_text} vers votre destination est prêt. "
                 "J'ouvre Google Maps pour vous."
             )
 
