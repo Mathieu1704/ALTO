@@ -505,9 +505,6 @@ conversation = [
 
 
 # 💬 Dialogue principal
-
-import json
-
 async def ask_gpt(prompt: str, lat: float = None, lng: float = None) -> dict:
     # 1) On ajoute l'input utilisateur
     conversation.append({"role": "user", "content": prompt})
@@ -585,21 +582,34 @@ async def ask_gpt(prompt: str, lat: float = None, lng: float = None) -> dict:
             messages=conversation
         )
         answer_msg = second.choices[0].message
-        answer = answer_msg.content.strip()
-        # récupère la réponse brute
         raw = answer_msg.content.strip()
         answer = raw
+
+        # Spécialisation pour les itinéraires Google Maps
         if name == "get_directions":
-            import re
-            # supprime les liens markdown [texte](url)
-            answer = re.sub(r'\[.*?\]\(https?://[^\s)]+\)', '', answer)
-            # supprime les URL brutes
-            answer = re.sub(r'https?://[^\s]+', '', answer)
-            # nettoie les espaces multiples restants
-            answer = re.sub(r'\s{2,}', ' ', answer).strip()
+            # Récupération du mode (driving, walking, transit)
+            mode = args.get("mode", "driving")
+            fr_modes = {
+                "driving": "en voiture",
+                "walking": "à pied",
+                "transit": "en transport en commun"
+            }
+            mode_text = fr_modes.get(mode, "en voiture")
+
+            dur = result["duration"]
+            dist = result["distance"]
+            dest = result["end_address"]
+
+            answer = (
+                f"L'itinéraire {mode_text} jusqu'à {dest} "
+                f"prend environ {dur} pour {dist}. "
+                "J'ouvre Google Maps pour vous."
+            )
+
+        # 7) On met à jour ce que l'assistant dira
         response_data["text_to_speak"] = answer
 
-        # 7) Extraction de l’action
+        # 8) Extraction de l’action
         if name == "get_directions":
             response_data["action"] = {
                 "type": "maps",
@@ -612,7 +622,7 @@ async def ask_gpt(prompt: str, lat: float = None, lng: float = None) -> dict:
             }
         elif name == "prepare_call_contact":
             response_data["action"] = {
-                "type": "make_call",  
+                "type": "make_call",
                 "data": result
             }
         elif name == "prepare_open_camera":
@@ -623,17 +633,15 @@ async def ask_gpt(prompt: str, lat: float = None, lng: float = None) -> dict:
         elif name == "prepare_open_app":
             response_data["action"] = {
                 "type": "open_app",
-                "data": result          
+                "data": result
             }
         elif name == "read_local_calendar":
             response_data["action"] = {
                 "type": "read_calendar",
-                "data": result         
+                "data": result
             }
 
-
-        
-
+        # 9) On ajoute enfin la réponse à la conversation
         conversation.append({"role": "assistant", "content": answer})
 
     else:
@@ -643,6 +651,7 @@ async def ask_gpt(prompt: str, lat: float = None, lng: float = None) -> dict:
         conversation.append({"role": "assistant", "content": answer})
 
     return response_data
+
 
 
 

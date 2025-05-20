@@ -149,6 +149,22 @@ export default function useVoiceRecognition() {
     }
   };
 
+  
+
+const handleOpenMap = async (url: string) => {
+  try {
+    await Linking.openURL(url);
+  } catch {
+    addMessage({
+      id: Date.now().toString(),
+      role: 'assistant',
+      content: "Impossible d'ouvrir Google Maps. Vérifiez qu'elle soit installée.",
+      timestamp: Date.now(),
+    });
+  }
+};
+
+
 // 📨 Fonction pour gérer l'envoi de SMS (version avec confirmation de contact)
 const handleSendMessage = async (
   recipientName: string,
@@ -716,7 +732,10 @@ const stopRecording = async () => {
         await handleOpenApp(finalAction.data.app_name);
       } else if (finalAction?.type === 'read_calendar') {
         await handleReadCalendar(finalAction.data.period);
+      } else if (finalAction?.type === 'maps') {
+        await handleOpenMap(finalAction.data.maps_url);
       }
+      
       setIsProcessing(false);
     };
 
